@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}E-Voting Platform{% endblock %}
+{% block content %}
+<div class="card text-center" style="padding: 60px 20px;">
+    <h1 style="font-size: 2.5em; margin-bottom: 15px;">E-Voting Platform</h1>
+    <p style="font-size: 1.2em; color: #666; margin-bottom: 30px;">
+        Secure, transparent, and anonymous digital elections for Educational Institutions.
+    </p>
+</div>
+
+<h2 style="margin: 30px 0 20px;">Participating Institutions</h2>
+<div class="grid">
+    {% for org in organizations %}
+    <div class="card">
+        <h3>{{ org.name }}</h3>
+        <p style="color: #666; margin: 10px 0;">Status: <span class="status-badge status-{{ org.subscription_status }}">{{ org.subscription_status }}</span></p>
+        <a href="{% url 'organization_landing' org.slug %}" class="btn">Visit Portal</a>
+    </div>
+    {% empty %}
+    <p>No organizations are currently subscribed.</p>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}E-Voting Platform{% endblock %}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; color: #333; line-height: 1.6; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header { background: #1a365d; color: white; padding: 1rem 0; margin-bottom: 2rem; }
+        header .container { display: flex; justify-content: space-between; align-items: center; }
+        .btn { display: inline-block; padding: 10px 20px; background: #2b6cb0; color: white; text-decoration: none; border-radius: 5px; border: none; cursor: pointer; font-size: 1em; }
+        .btn:hover { background: #2c5282; }
+        .btn-success { background: #38a169; }
+        .btn-success:hover { background: #2f855a; }
+        .btn-danger { background: #e53e3e; }
+        .btn-warning { background: #d69e2e; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .alert { padding: 12px; border-radius: 5px; margin-bottom: 15px; }
+        .alert-success { background: #c6f6d5; color: #22543d; }
+        .alert-error { background: #fed7d7; color: #742a2a; }
+        .alert-info { background: #bee3f8; color: #2a4365; }
+        .alert-warning { background: #fefcbf; color: #744210; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #edf2f7; font-weight: 600; }
+        .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 0.85em; font-weight: 600; display: inline-block; }
+        .status-DRAFT { background: #e2e8f0; color: #4a5568; }
+        .status-LIVE { background: #c6f6d5; color: #22543d; }
+        .status-CLOSED { background: #fed7d7; color: #742a2a; }
+        .status-ARCHIVED { background: #e9d8fd; color: #553c9a; }
+        .status-ACTIVE { background: #c6f6d5; color: #22543d; }
+        .status-EXPIRED { background: #fed7d7; color: #742a2a; }
+        .status-GRACE { background: #fefcbf; color: #744210; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        nav a { color: white; text-decoration: none; margin-left: 20px; }
+        nav a:hover { text-decoration: underline; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 5px; font-size: 1em; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #2b6cb0; }
+        .text-center { text-align: center; }
+        .mt-2 { margin-top: 20px; }
+        .mb-2 { margin-bottom: 20px; }
+        code { background: #edf2f7; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1><a href="{% url 'home' %}" style="color: white; text-decoration: none;">E-Voting Platform</a></h1>
+            <nav>
+                {% if user.is_authenticated %}
+                    {% if is_org_admin %}
+                        <a href="{% url 'admin_dashboard' %}">Admin</a>
+                    {% endif %}
+                    {% if is_election_officer %}
+                        <a href="{% url 'observer_dashboard' %}">Observer</a>
+                    {% endif %}
+                    {% if is_platform_owner %}
+                        {% if request.resolver_match.url_name != 'platform_dashboard' %}
+                            <a href="{% url 'platform_dashboard' %}">Platform</a>
+                        {% endif %}
+                    {% endif %}
+                    <a href="{% url 'logout' %}">Logout</a>
+                {% else %}
+                    <a href="{% url 'home' %}">Organizations</a>
+                    <a href="{% url 'admin_login' %}">Admin Login</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    <div class="container">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

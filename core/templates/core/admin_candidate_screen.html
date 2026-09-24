@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Screen Candidate — {{ candidate.name }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 600px;">
+    <h2>Screen Candidate</h2>
+    <div style="margin: 20px 0; padding: 15px; background: #f7fafc; border-radius: 8px;">
+        <h3>{{ candidate.name }}</h3>
+        <p>Position: {{ candidate.position.name }}</p>
+        <p>Current Status: <span class="status-badge status-{{ candidate.status }}">{{ candidate.status }}</span></p>
+        {% if candidate.manifesto %}
+            <p style="margin-top: 10px;"><strong>Manifesto:</strong><br>{{ candidate.manifesto }}</p>
+        {% endif %}
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+        <div class="form-group">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-success">Update Status</button>
+        <a href="{% url 'admin_election_detail' candidate.position.election.id %}" class="btn" style="background: #718096;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

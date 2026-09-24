@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Observer Dashboard — {{ organization.name }}{% endblock %}
+{% block content %}
+<h1>🔍 Election Observer Dashboard</h1>
+<p style="color: #666; margin-bottom: 25px;">{{ organization.name }} — Read-only process monitoring</p>
+
+{% if no_assignment %}
+<div class="card text-center">
+    <h3>No Election Assigned</h3>
+    <p>No election has been assigned to you for monitoring.</p>
+    <p style="color: #666; margin-top: 10px;">Please contact your Organization Admin to be assigned to an election.</p>
+</div>
+{% elif no_election %}
+<div class="card text-center">
+    <h3>No Active Election</h3>
+    <p>There are no active or recently closed elections at this time.</p>
+</div>
+{% else %}
+<div class="grid">
+    <div class="card text-center" style="background: #1a365d; color: white;">
+        <h3 style="font-size: 2em;">{{ turnout_count }} / {{ total_eligible }}</h3>
+        <p>Voters Participated</p>
+        <p style="font-size: 1.5em; margin-top: 10px;">{{ turnout_percentage }}%</p>
+    </div>
+
+    <div class="card text-center">
+        <h3>Election Status</h3>
+        <p class="status-badge status-{{ election.state }}" style="font-size: 1.2em; margin: 15px 0;">{{ election.state }}</p>
+        {% if time_remaining %}
+            <p>Time Remaining: {{ time_remaining }}</p>
+        {% elif election.state == "CLOSED" %}
+            <p>Closed at: {{ election.actual_closed_at|date:"M d, Y H:i:s" }}</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if results_available %}
+<div class="card text-center">
+    <h3>Results Published</h3>
+    <p>The election has closed and results are now public.</p>
+    <a href="{% url 'election_results' organization.slug election.id %}" class="btn">View Public Results</a>
+</div>
+{% else %}
+<div class="alert alert-info" style="margin: 20px 0;">
+    ℹ️ Results are hidden during LIVE voting to preserve election integrity. 
+    They will appear here automatically when the election closes.
+</div>
+{% endif %}
+
+<h2 style="margin-top: 30px;">Live Audit Feed</h2>
+<div class="card" style="max-height: 500px; overflow-y: auto; font-family: monospace; font-size: 0.9em;">
+    <table>
+        <thead>
+            <tr><th>Time</th><th>Action</th><th>Actor</th><th>Details</th></tr>
+        </thead>
+        <tbody>
+            {% for log in audit_feed %}
+            <tr>
+                <td>{{ log.timestamp|date:"H:i:s" }}</td>
+                <td><span style="color: #2b6cb0;">{{ log.action_type }}</span></td>
+                <td>{{ log.actor|default:"SYSTEM" }}</td>
+                <td>{{ log.description|truncatewords:10 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" style="text-align: center; color: #666;">No activity recorded yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Add Candidate — {{ position.name }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 600px;">
+    <h2>Add Candidate</h2>
+    <p style="color: #666;">Position: {{ position.name }} | Election: {{ position.election.title }}</p>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {% for field in form %}
+        <div class="form-group">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-success">Add Candidate</button>
+        <a href="{% url 'admin_election_detail' position.election.id %}" class="btn" style="background: #718096;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

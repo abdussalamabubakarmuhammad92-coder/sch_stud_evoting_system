@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Results — {{ election.title }}{% endblock %}
+{% block content %}
+<div class="card text-center" style="background: #1a365d; color: white;">
+    <h1>{{ election.title }}</h1>
+    <p>Election Results</p>
+    {% if election.final_tally_hash %}
+    <div style="margin-top: 15px; font-size: 0.85em; opacity: 0.9;">
+        Tally Hash (SHA-256):<br>
+        <code style="background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; word-break: break-all;">{{ election.final_tally_hash }}</code>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card" style="display: flex; justify-content: space-around; text-align: center; flex-wrap: wrap;">
+    <div style="padding: 10px;">
+        <h2>{{ total_eligible }}</h2>
+        <p style="color: #666;">Eligible Voters</p>
+    </div>
+    <div style="padding: 10px;">
+        <h2>{{ total_voters }}</h2>
+        <p style="color: #666;">Voted</p>
+    </div>
+    <div style="padding: 10px;">
+        <h2>{{ turnout_percentage }}%</h2>
+        <p style="color: #666;">Turnout</p>
+    </div>
+</div>
+
+{% for result in results %}
+<div class="card">
+    <h2>{{ result.position.name }}</h2>
+
+    {% if result.is_tie %}
+    <div class="alert alert-warning" style="margin: 15px 0;">
+        ⚠️ <strong>TIE DETECTED</strong> — This position requires institutional resolution per the school's constitution.
+    </div>
+    {% endif %}
+
+    <table>
+        <thead>
+            <tr>
+                <th>Candidate</th>
+                <th>Votes</th>
+                <th>Share</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in result.candidates %}
+            <tr>
+                <td>
+                    {% if c.candidate.photo %}
+                        <img src="{{ c.candidate.photo.url }}" style="width: 40px; height: 40px; border-radius: 50%; vertical-align: middle; margin-right: 10px;">
+                    {% endif %}
+                    {{ c.candidate.name }}
+                </td>
+                <td><strong>{{ c.votes }}</strong></td>
+                <td>
+                    {% if result.total_votes > 0 %}
+                        {% widthratio c.votes result.total_votes 100 %}%
+                    {% else %}
+                        0%
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p style="color: #666; margin-top: 10px;">Total votes cast: {{ result.total_votes }}</p>
+</div>
+{% endfor %}
+{% endblock %}

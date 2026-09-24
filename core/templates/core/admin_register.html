@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Admin Registration — E-Voting Platform{% endblock %}
+{% block content %}
+<div style="max-width: 500px; margin: 0 auto;">
+    <div class="card text-center" style="margin-bottom: 25px;">
+        <h1>Admin Registration</h1>
+        <p style="color: #666;">Register using your invitation code</p>
+    </div>
+
+    <div class="card">
+        <form method="post">
+            {% csrf_token %}
+            
+            <div class="form-group">
+                <label>Invitation Code <span style="color: #e53e3e;">*</span></label>
+                <input type="text" name="code" required placeholder="e.g. FUD-COMP-ADMIN1" style="text-transform: uppercase;">
+                <small style="color: #666;">Enter the code given to you by the platform team</small>
+            </div>
+            
+            <div class="form-group">
+                <label>Full Name <span style="color: #e53e3e;">*</span></label>
+                <input type="text" name="name" required placeholder="e.g. Ahmed Ibrahim">
+            </div>
+            
+            <div class="form-group">
+                <label>Email Address <span style="color: #e53e3e;">*</span></label>
+                <input type="email" name="email" required placeholder="e.g. ahmed@fud.edu.ng">
+            </div>
+            
+            <div class="form-group">
+                <label>Password <span style="color: #e53e3e;">*</span></label>
+                <input type="password" name="password" required placeholder="Minimum 8 characters">
+            </div>
+            
+            <div class="form-group">
+                <label>Confirm Password <span style="color: #e53e3e;">*</span></label>
+                <input type="password" name="confirm_password" required>
+            </div>
+            
+            <button type="submit" class="btn btn-success" style="width: 100%;">Register</button>
+        </form>
+    </div>
+
+    <div style="text-align: center; margin-top: 20px;">
+        <a href="{% url 'admin_login' %}" style="color: #666;">Already have an account? Login here</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Verify OTP — {{ organization.name }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 500px; margin: 0 auto;">
+    <h2>Verify Your Identity</h2>
+    <p style="color: #666; margin-bottom: 20px;">
+        {% if purpose == "registration" %}
+            Step 2 of 3 — Enter the 6-digit code sent to your registered contact.
+        {% elif purpose == "new_device" %}
+            New Device Detected — Enter the 6-digit code sent to your registered contact.
+        {% elif purpose == "password_reset" %}
+            Password Reset — Enter the 6-digit code sent to your registered contact.
+        {% else %}
+            Enter the 6-digit code sent to your registered contact.
+        {% endif %}
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="form-group">
+            <label for="id_otp_code">Verification Code</label>
+            {{ form.otp_code }}
+        </div>
+        <button type="submit" class="btn" style="width: 100%;">Verify</button>
+    </form>
+
+    <p style="margin-top: 20px; text-align: center; color: #666; font-size: 0.9em;">
+        Code expires in 10 minutes. Didn't receive it? Check your spam folder or try registering again.
+    </p>
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ action }} Election{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 700px;">
+    <h2>{{ action }} Election</h2>
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+        <div class="form-group">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}<small style="color: #666;">{{ field.help_text }}</small>{% endif %}
+            {% if field.errors %}<div style="color: #e53e3e; margin-top: 5px;">{{ field.errors }}</div>{% endif %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-success">{{ action }} Election</button>
+        <a href="{% url 'admin_dashboard' %}" class="btn" style="background: #718096;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

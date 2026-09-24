@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Create Category — {{ organization.name }}{% endblock %}
+{% block content %}
+<h1>Create Election Category</h1>
+<p style="color: #666; margin-bottom: 25px;">{{ organization.name }} — Add a new election category</p>
+
+<div class="card" style="max-width: 600px;">
+    <form method="post">
+        {% csrf_token %}
+        
+        <div style="margin-bottom: 15px;">
+            <label>Category Type</label>
+            {{ form.category_type }}
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label>Name</label>
+            {{ form.name }}
+            <small style="color: #666;">e.g. "Faculty of Computing" or "Kano State Students Association"</small>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label>Slug</label>
+            {{ form.slug }}
+            <small style="color: #666;">Auto-generated from name. Do not edit.</small>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label>
+                {{ form.is_active }} Active
+            </label>
+            <small style="color: #666; display: block; margin-top: 5px;">Uncheck for "Coming Soon" status (e.g. SUG elections)</small>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label>Display Order</label>
+            {{ form.display_order }}
+            <small style="color: #666;">Lower numbers appear first in the voter dashboard tabs</small>
+        </div>
+        
+        <button type="submit" class="btn">Create Category</button>
+        <a href="{% url 'admin_dashboard' %}" class="btn" style="background: #666;">Cancel</a>
+    </form>
+</div>
+
+{% endblock %}

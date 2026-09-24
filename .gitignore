@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
+# Django local state
+db.sqlite3
+staticfiles/
+media/
+
+# Logs
+*.log
+logs/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Local archives / generated files
+*.zip
+combined_code.txt

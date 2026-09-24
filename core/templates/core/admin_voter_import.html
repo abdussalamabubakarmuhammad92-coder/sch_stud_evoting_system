@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Import Voters — {{ organization.name }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 700px;">
+    <h2>Import Verified Voter Records</h2>
+    <p style="color: #666; margin-bottom: 20px;">{{ organization.name }}</p>
+
+    <div class="alert alert-info" style="font-size: 0.9em;">
+        <strong>Required CSV columns:</strong><br>
+        <code>matric_number, official_email, official_phone, level, department, faculty</code><br><br>
+        <strong>Rules:</strong>
+        <ul style="margin-top: 10px; padding-left: 20px;">
+            <li>Matric numbers will be converted to UPPERCASE</li>
+            <li>Existing records for the same matric will be updated</li>
+            <li>Phone numbers are the primary strict-match anchor for registration</li>
+        </ul>
+    </div>
+
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="form-group">
+            <label for="id_csv_file">CSV File</label>
+            {{ form.csv_file }}
+        </div>
+        <button type="submit" class="btn btn-success">Import Voters</button>
+        <a href="{% url 'admin_dashboard' %}" class="btn" style="background: #718096;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

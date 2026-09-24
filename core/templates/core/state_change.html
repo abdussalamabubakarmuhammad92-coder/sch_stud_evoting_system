@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Change State Association — {{ organization.name }}{% endblock %}
+{% block content %}
+<h1>Change State Association</h1>
+<p style="color: #666; margin-bottom: 25px;">Update your state of origin membership.</p>
+
+<div class="card" style="max-width: 500px;">
+    <form method="post">
+        {% csrf_token %}
+        
+        <div style="margin-bottom: 20px;">
+            <label><strong>Current State</strong></label>
+            <p style="padding: 10px; background: #f7fafc; margin-top: 8px;">{{ current_state }}</p>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+            <label><strong>New State</strong></label>
+            <select name="state" required style="width: 100%; padding: 10px; margin-top: 8px; font-size: 1em;">
+                <option value="">-- Select new state --</option>
+                {% for code, name in states %}
+                <option value="{{ code }}" {% if code == current_state %}selected disabled{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <p style="color: #e53e3e; margin-bottom: 15px; font-size: 0.9em;">
+            ⚠️ This will remove your current membership and create a new one.
+        </p>
+        
+        <button type="submit" class="btn">Update State</button>
+        <a href="{% url 'voter_dashboard' organization.slug %}" class="btn" style="background: #666;">Cancel</a>
+    </form>
+</div>
+
+{% endblock %}

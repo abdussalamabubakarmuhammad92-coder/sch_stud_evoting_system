@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — {{ organization.name }}{% endblock %}
+{% block content %}
+<h1>📋 Audit Log</h1>
+<p style="color: #666; margin-bottom: 25px;">{{ organization.name }} — Complete process audit trail</p>
+
+<!-- Filters -->
+<div class="card" style="margin-bottom: 25px;">
+    <h3 style="margin-bottom: 15px;">Filter Log</h3>
+    <form method="get" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <div class="form-group">
+            <label>Search by Actor</label>
+            <input type="text" name="actor" value="{{ filters.actor }}" placeholder="Email or matric number">
+        </div>
+        
+        <div class="form-group">
+            <label>Actor Type</label>
+            <select name="actor_type">
+                <option value="">All</option>
+                <option value="SYSTEM" {% if filters.actor_type == "SYSTEM" %}selected{% endif %}>SYSTEM Only</option>
+                <option value="ADMIN" {% if filters.actor_type == "ADMIN" %}selected{% endif %}>Admins Only</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label>Election</label>
+            <select name="election">
+                <option value="">All Elections</option>
+                {% for election in elections %}
+                <option value="{{ election.id }}" {% if filters.election|stringformat:"s" == election.id|stringformat:"s" %}selected{% endif %}>{{ election.title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label>From Date</label>
+            <input type="date" name="date_from" value="{{ filters.date_from }}">
+        </div>
+        
+        <div class="form-group">
+            <label>To Date</label>
+            <input type="date" name="date_to" value="{{ filters.date_to }}">
+        </div>
+        
+        <div class="form-group" style="display: flex; align-items: flex-end; gap: 10px;">
+            <button type="submit" class="btn">🔍 Filter</button>
+            <a href="{% url 'admin_audit_log' %}" class="btn" style="background: #666;">Clear</a>
+        </div>
+    </form>
+</div>
+
+<!-- Export Button -->
+<div style="margin-bottom: 20px;">
+    <a href="{% url 'admin_audit_log_export' %}?{{ query_string }}&export=1" class="btn" style="background: #38a169;">📥 Export Filtered Log as CSV</a>
+</div>
+
+<!-- Log Table -->
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Election</th>
+                <th>Actor</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td style="white-space: nowrap;">{{ log.timestamp|date:"M d, Y H:i:s" }}</td>
+                <td><code>{{ log.action_type }}</code></td>
+                <td>{% if log.election %}{{ log.election.title }}{% else %}—{% endif %}</td>
+                <td>{{ log.actor|default:"—" }}</td>
+                <td>{{ log.description|truncatewords:20 }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" style="text-align: center; color: #666; padding: 30px;">
+                    No audit log entries match your filters.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    {% if logs.count == 500 %}
+    <p style="color: #666; margin-top: 15px; font-size: 0.9em;">
+        Showing latest 500 entries. Use filters or export CSV for complete history.
+    </p>
+    {% endif %}
+</div>
+
+<a href="{% url 'admin_dashboard' %}" class="btn" style="background: #718096;">← Back to Dashboard</a>
+{% endblock %}

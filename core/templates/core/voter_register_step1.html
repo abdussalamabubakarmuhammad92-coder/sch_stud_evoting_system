@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Register — {{ organization.name }}{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 500px; margin: 0 auto;">
+    <h2>Voter Registration</h2>
+    <p style="color: #666; margin-bottom: 20px;">Step 1 of 3 — {{ organization.name }}</p>
+
+    <div class="alert alert-info" style="font-size: 0.9em;">
+        Enter your details exactly as registered with your school's ICT department.
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="form-group">
+            <label for="id_matric_number">Matric Number</label>
+            {{ form.matric_number }}
+        </div>
+        <div class="form-group">
+            <label for="id_email">Email Address</label>
+            {{ form.email }}
+        </div>
+        <div class="form-group">
+            <label for="id_phone_number">Phone Number</label>
+            {{ form.phone_number }}
+        </div>
+        <button type="submit" class="btn" style="width: 100%;">Continue</button>
+    </form>
+
+    <p style="margin-top: 20px; text-align: center;">
+        Already registered? <a href="{% url 'voter_login' organization.slug %}">Log in</a>
+    </p>
+</div>
+{% endblock %}

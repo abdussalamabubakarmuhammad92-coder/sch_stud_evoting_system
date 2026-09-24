@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Results — {{ election.title }}{% endblock %}
+{% block content %}
+<div class="card text-center" style="background: #1a365d; color: white;">
+    <h1>{{ election.title }}</h1>
+    <p>Official Results — Admin View</p>
+    {% if election.final_tally_hash %}
+    <div style="margin-top: 15px; font-size: 0.85em; opacity: 0.9;">
+        Tally Hash:<br>
+        <code style="background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; word-break: break-all;">{{ election.final_tally_hash }}</code>
+    </div>
+    {% endif %}
+</div>
+
+<div style="margin: 20px 0;">
+    <a href="{% url 'admin_election_results_export' election.id %}" class="btn" style="background: #38a169;">📥 Export This Election's Results (CSV)</a>
+    <a href="{% url 'admin_election_detail' election.id %}" class="btn" style="background: #718096;">← Back to Election</a>
+</div>
+
+{% for result in results %}
+<div class="card">
+    <h2>{{ result.position.name }}</h2>
+
+    {% if result.is_tie %}
+    <div class="alert alert-warning" style="margin: 15px 0;">
+        ⚠️ <strong>TIE DETECTED</strong> — Requires institutional resolution.
+    </div>
+    {% endif %}
+
+    <table>
+        <thead>
+            <tr><th>Rank</th><th>Candidate</th><th>Votes</th><th>Share</th></tr>
+        </thead>
+        <tbody>
+            {% for c in result.candidates %}
+            <tr>
+                <td>#{{ forloop.counter }}</td>
+                <td>{{ c.candidate.name }}</td>
+                <td><strong>{{ c.votes }}</strong></td>
+                <td>{% if result.total_votes > 0 %}{% widthratio c.votes result.total_votes 100 %}%{% else %}0%{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p style="color: #666; margin-top: 10px;">Total: {{ result.total_votes }} votes</p>
+</div>
+{% endfor %}
+
+{% endblock %}

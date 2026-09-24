@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ election.title }}{% endblock %}
+{% block content %}
+<h1>{{ election.title }}</h1>
+<p>
+    <span class="status-badge status-{{ election.state }}">{{ election.state }}</span>
+    <span style="color: #666;">| {{ election.category.name }}</span>
+    {% if election.voting_opens_at %}| Opens: {{ election.voting_opens_at|date:"M d, Y H:i" }}{% endif %}
+    {% if election.voting_closes_at %}| Closes: {{ election.voting_closes_at|date:"M d, Y H:i" }}{% endif %}
+</p>
+
+<div style="margin: 20px 0;">
+    {% if election.state == "DRAFT" %}
+        <form method="post" action="{% url 'election_transition' election.id %}" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="new_state" value="LIVE">
+            <button type="submit" class="btn btn-success" onclick="return confirm('Start this election? Voters will be able to cast votes immediately.')">🚀 Start Election (Go LIVE)</button>
+        </form>
+    {% elif election.state == "LIVE" %}
+        <form method="post" action="{% url 'election_transition' election.id %}" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="new_state" value="CLOSED">
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Close this election? This will immediately publish results and generate the tally hash.')">🔒 Close Election</button>
+        </form>
+    {% elif election.state == "CLOSED" %}
+        <form method="post" action="{% url 'election_transition' election.id %}" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="new_state" value="ARCHIVED">
+            <button type="submit" class="btn" onclick="return confirm('Archive this election? It will become read-only.')">📦 Archive Election</button>
+        </form>
+        <a href="{% url 'admin_results' election.id %}" class="btn btn-success">📊 View Results</a>
+    {% endif %}
+    <a href="{% url 'position_create' election.id %}" class="btn">+ Add Position</a>
+</div>
+
+<h2>Positions & Candidates</h2>
+{% for position in positions %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <h3>{{ position.name }}</h3>
+        <a href="{% url 'candidate_create' position.id %}" class="btn" style="font-size: 0.9em;">+ Add Candidate</a>
+    </div>
+
+    <table>
+        <thead>
+            <tr><th>Candidate</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+            {% for candidate in position.candidates.all %}
+            <tr>
+                <td>{{ candidate.name }}</td>
+                <td><span class="status-badge status-{{ candidate.status }}">{{ candidate.status }}</span></td>
+                <td>
+                    <a href="{% url 'candidate_screen' candidate.id %}" class="btn" style="font-size: 0.85em; padding: 5px 10px;">Screen</a>
+                    {% if election.state != "LIVE" %}
+                        <a href="{% url 'candidate_delete' candidate.id %}" class="btn btn-danger" style="font-size: 0.85em; padding: 5px 10px;">Delete</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="3">No candidates yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% empty %}
+<p>No positions created yet.</p>
+{% endfor %}
+
+<a href="{% url 'admin_dashboard' %}" class="btn" style="background: #718096;">← Back to Dashboard</a>
+{% endblock %}

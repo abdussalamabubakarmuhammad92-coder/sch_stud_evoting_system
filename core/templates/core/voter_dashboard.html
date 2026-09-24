@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Voter Dashboard — {{ organization.name }}{% endblock %}
+{% block content %}
+<h1>{{ organization.name }} — Elections</h1>
+<p style="color: #666; margin-bottom: 25px;">Welcome, {{ voter.matric_number }}
+    {% if not voter.state_memberships.exists %}
+        <a href="{% url 'state_register' organization.slug %}" class="btn" style="background: #dd6b20; font-size: 0.85em; margin-left: 10px;">Register State Association</a>
+    {% else %}
+        <a href="{% url 'state_change' organization.slug %}" class="btn" style="background: #666; font-size: 0.85em; margin-left: 10px;">Change State</a>
+    {% endif %}
+</p>
+
+{% if not tab_data %}
+<div class="card text-center">
+    <h3>No Elections Available</h3>
+    <p>There are no active or recently closed elections at this time.</p>
+</div>
+{% else %}
+<!-- Tab Navigation -->
+<div style="display: flex; gap: 0; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0;">
+    {% for tab in tab_data %}
+    <button class="tab-btn {% if forloop.first %}active{% endif %}" 
+            onclick="switchTab({{ forloop.counter0 }})"
+            data-tab="{{ forloop.counter0 }}"
+            style="padding: 12px 24px; border: none; background: {% if forloop.first %}white{% else %}#f7fafc{% endif %}; 
+                   cursor: pointer; font-size: 1em; border-bottom: 3px solid {% if forloop.first %}#3182ce{% else %}transparent{% endif %};
+                   margin-bottom: -2px;">
+        {% if tab.category.category_type == "FACULTY" %}
+            Faculty Elections
+        {% elif tab.category.category_type == "STATE_ASSOCIATION" %}
+            State Elections
+        {% elif tab.category.category_type == "SUG" %}
+            <span style="color: #999;">SUG Elections (Coming Soon)</span>
+        {% endif %}
+    </button>
+    {% endfor %}
+</div>
+
+<!-- Tab Content -->
+{% for tab in tab_data %}
+<div class="tab-content" id="tab-{{ forloop.counter0 }}" style="display: {% if forloop.first %}block{% else %}none{% endif %};">
+    {% if not tab.category.is_active %}
+    <div class="card text-center" style="padding: 40px;">
+        <h2 style="color: #999;">🚧 Coming Soon</h2>
+        <p style="color: #666; margin-top: 10px;">{{ tab.category.name }} elections will be available in the future.</p>
+    </div>
+    
+    {% elif not tab.elections %}
+    <div class="card text-center" style="padding: 40px;">
+        <h3>No Active Elections</h3>
+        <p style="color: #666; margin-top: 10px;">There are no live or recently closed elections in this category.</p>
+    </div>
+    
+    {% else %}
+    {% for election in tab.elections %}
+    <div class="card" style="margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;">
+            <div>
+                <h3>{{ election.election.title }}</h3>
+                <p>
+                    <span class="status-badge status-{{ election.election.state }}">{{ election.election.state }}</span>
+                    {% if election.election.voting_opens_at %}
+                        | {{ election.election.voting_opens_at|date:"M d, Y H:i" }}
+                    {% endif %}
+                </p>
+            </div>
+            {% if election.election.state == "LIVE" %}
+                <a href="{% url 'ballot_view' organization.slug election.election.id %}" class="btn btn-success">
+                    {% if election.all_voted %}📋 View Ballot{% else %}Vote Now{% endif %}
+                </a>
+            {% endif %}
+        </div>
+
+        {% for pos in election.positions %}
+        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e2e8f0;">
+            <span>{{ pos.position.name }}</span>
+            {% if pos.voted %}
+                <span style="color: #38a169;">✅ Voted</span>
+            {% elif election.election.state == "LIVE" %}
+                <span style="color: #dd6b20;">⏳ Pending</span>
+            {% else %}
+                <span style="color: #999;">—</span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if past_elections %}
+<div style="margin-top: 30px;">
+    <button type="button" class="btn" id="past-results-toggle" style="cursor: pointer;">📊 See Past Election Results</button>
+    
+    <div id="past-results-section" style="display: none; margin-top: 15px;">
+        {% for election in past_elections %}
+        <div class="card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 10px;">
+            <div>
+                <h3>{{ election.title }}</h3>
+                <p style="color: #666;">
+                    <span class="status-badge status-{{ election.state }}">{{ election.state }}</span>
+                    {% if election.actual_closed_at %}
+                        | Closed: {{ election.actual_closed_at|date:"M d, Y H:i" }}
+                    {% endif %}
+                </p>
+            </div>
+            <a href="{% url 'election_results' organization.slug election.id %}" class="btn">View Results</a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<script>
+function switchTab(tabIndex) {
+    document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(el => {
+        el.style.background = '#f7fafc';
+        el.style.borderBottom = '3px solid transparent';
+    });
+    document.getElementById('tab-' + tabIndex).style.display = 'block';
+    document.querySelector(`[data-tab="${tabIndex}"]`).style.background = 'white';
+    document.querySelector(`[data-tab="${tabIndex}"]`).style.borderBottom = '3px solid #3182ce';
+}
+
+var pastBtn = document.getElementById('past-results-toggle');
+var pastSection = document.getElementById('past-results-section');
+if (pastBtn && pastSection) {
+    pastBtn.addEventListener('click', function() {
+        pastSection.style.display = pastSection.style.display === 'none' ? 'block' : 'none';
+        pastBtn.textContent = pastSection.style.display === 'none' ? '📊 See Past Election Results' : '📊 Hide Past Results';
+    });
+}
+</script>
+{% endblock %}

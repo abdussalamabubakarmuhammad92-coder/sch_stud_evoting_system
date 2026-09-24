@@ -1,0 +1,83 @@
+{% extends "core/base.html" %}
+
+{% block title %}Onboard New Organization | SUG E-Voting{% endblock %}
+
+{% block content %}
+<div class="container mt-4 mb-5">
+    <div class="row justify-content-center">
+        <div class="col-md-7 col-lg-6">
+            
+            <!-- Header -->
+            <div class="text-center mb-4">
+                <h2 class="fw-bold text-evoting-primary">Onboard New Organization</h2>
+                <p class="text-muted">Register a new Student Union Government to the platform.</p>
+            </div>
+
+            <!-- Card Container -->
+            <div class="evoting-card shadow-sm">
+                <div class="evoting-card-header bg-evoting-primary text-white">
+                    <h5 class="mb-0">Organization Details</h5>
+                </div>
+                
+                <div class="evoting-card-body p-4">
+                    {% if messages %}
+                        {% for message in messages %}
+                            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+
+                    <!-- 
+                        NOTE: This is a structural placeholder. 
+                        To make this functional, you will need to create an 
+                        OrganizationCreationForm in forms.py and update the 
+                        platform_onboard view in views.py to handle the POST request.
+                    -->
+                    <div class="alert alert-info py-2 small">
+                        <i class="bi bi-info-circle-fill me-1"></i> 
+                        Form submission logic will be connected here once the model form is created.
+                    </div>
+
+                    <form>
+                        <!-- Organization Name -->
+                        <div class="evoting-form-group mb-3">
+                            <label for="orgName" class="form-label fw-semibold">Organization Name</label>
+                            <input type="text" class="evoting-input" id="orgName" placeholder="e.g. University of Lagos SUG" disabled>
+                        </div>
+
+                        <!-- URL Slug -->
+                        <div class="evoting-form-group mb-3">
+                            <label for="orgSlug" class="form-label fw-semibold">URL Slug</label>
+                            <div class="input-group">
+                                <span class="input-group-text evoting-input" style="background-color: #f8f9fa; border-right: none;">https://yourdomain.com/org/</span>
+                                <input type="text" class="evoting-input" id="orgSlug" placeholder="unilag-sug" disabled style="border-left: none;">
+                            </div>
+                            <small class="text-muted">No spaces, use lowercase letters and hyphens only.</small>
+                        </div>
+
+                        <!-- Admin Email (Likely needed for onboarding) -->
+                        <div class="evoting-form-group mb-4">
+                            <label for="adminEmail" class="form-label fw-semibold">Primary Admin Email</label>
+                            <input type="email" class="evoting-input" id="adminEmail" placeholder="admin@unilag.edu.ng" disabled>
+                            <small class="text-muted">The super admin account for this organization.</small>
+                        </div>
+
+                        <!-- Buttons -->
+                        <div class="d-grid gap-2 mt-4">
+                            <button type="button" class="evoting-btn evoting-btn-primary w-100" disabled>
+                                <i class="bi bi-plus-circle me-2"></i>Create Organization
+                            </button>
+                            <a href="{% url 'platform_dashboard' %}" class="evoting-btn evoting-btn-secondary w-100 text-center" style="text-decoration: none;">
+                                Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

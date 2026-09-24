@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — {{ organization.name }}{% endblock %}
+{% block content %}
+<h1>{{ organization.name }} — Admin Dashboard</h1>
+
+{% if not subscription_active %}
+<div class="alert alert-warning">
+    <strong>Subscription Expired.</strong> You can still view all existing data,
+    but creating new elections is disabled until renewal. Existing live
+    elections continue running normally.
+</div>
+{% endif %}
+
+<div class="grid" style="margin: 25px 0;">
+    <div class="card text-center">
+        <h2>{{ elections.count }}</h2>
+        <p style="color: #666;">Total Elections</p>
+    </div>
+    <div class="card text-center">
+        <h2>{{ total_voters }}</h2>
+        <p style="color: #666;">Activated Voters</p>
+    </div>
+    <div class="card text-center">
+        <h2>{{ total_verified }}</h2>
+        <p style="color: #666;">Verified Records</p>
+    </div>
+</div>
+
+<div style="margin-bottom: 20px;">
+    {% if subscription_active %}
+        <a href="{% url 'category_create' %}" class="btn" style="background: #805ad5;">+ New Category</a>
+        <a href="{% url 'election_create' %}" class="btn">+ New Election</a>
+        <a href="{% url 'voter_import' %}" class="btn">Import Voters (CSV)</a>
+    {% endif %}
+    <a href="{% url 'admin_audit_log' %}" class="btn">Audit Log</a>
+    <a href="{% url 'export_organization_data' %}" class="btn" style="background: #555;">Export Your Data</a>
+</div>
+
+<h2>Live Elections</h2>
+{% for election in live_elections %}
+<div class="card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+    <div>
+        <h3>{{ election.title }}</h3>
+        <p>
+            <span class="status-badge status-{{ election.state }}">{{ election.state }}</span>
+            <span style="color: #666;">| {{ election.category.name }}</span>
+            {% if election.voting_opens_at %}| {{ election.voting_opens_at|date:"M d, Y H:i" }}{% endif %}
+        </p>
+    </div>
+    <div>
+        <a href="{% url 'admin_election_detail' election.id %}" class="btn">Manage</a>
+    </div>
+</div>
+{% empty %}
+<p>No live elections.</p>
+{% endfor %}
+
+{% if closed_elections %}
+<div style="margin-top: 30px;">
+    <button type="button" class="btn" id="closed-elections-toggle" style="cursor: pointer;">📋 Closed/Finished Elections</button>
+    
+    <div id="closed-elections-section" style="display: none; margin-top: 15px;">
+        {% for election in closed_elections %}
+        <div class="card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 10px;">
+            <div>
+                <h3>{{ election.title }}</h3>
+                <p>
+                    <span class="status-badge status-{{ election.state }}">{{ election.state }}</span>
+                    <span style="color: #666;">| {{ election.category.name }}</span>
+                    {% if election.actual_closed_at %}| Closed: {{ election.actual_closed_at|date:"M d, Y H:i" }}{% endif %}
+                </p>
+            </div>
+            <div>
+                <a href="{% url 'admin_election_detail' election.id %}" class="btn">Manage</a>
+                <a href="{% url 'admin_results' election.id %}" class="btn btn-success">Results</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<h2 style="margin-top: 30px;">Recent Activity</h2>
+<div class="card" style="max-height: 400px; overflow-y: auto;">
+    <table>
+        <thead>
+            <tr><th>Time</th><th>Action</th><th>Actor</th><th>Description</th></tr>
+        </thead>
+        <tbody>
+            {% for log in recent_logs %}
+            <tr>
+                <td>{{ log.timestamp|date:"M d, H:i" }}</td>
+                <td><code>{{ log.action_type }}</code></td>
+                <td>{{ log.actor }}</td>
+                <td>{{ log.description|truncatewords:15 }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4">No activity yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+var closedBtn = document.getElementById('closed-elections-toggle');
+var closedSection = document.getElementById('closed-elections-section');
+if (closedBtn && closedSection) {
+    closedBtn.addEventListener('click', function() {
+        closedSection.style.display = closedSection.style.display === 'none' ? 'block' : 'none';
+        closedBtn.textContent = closedSection.style.display === 'none' ? '📋 Closed/Finished Elections' : '📋 Hide Closed Elections';
+    });
+}
+</script>
+{% endblock %}

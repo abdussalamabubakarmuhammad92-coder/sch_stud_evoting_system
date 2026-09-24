@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Platform Dashboard{% endblock %}
+{% block content %}
+<h1>Platform Owner Dashboard</h1>
+
+<div class="grid" style="margin: 25px 0;">
+    <div class="card text-center">
+        <h2>{{ stats.total_orgs }}</h2>
+        <p style="color: #666;">Total Organizations</p>
+    </div>
+    <div class="card text-center">
+        <h2>{{ stats.active_orgs }}</h2>
+        <p style="color: #666;">Active</p>
+    </div>
+    <div class="card text-center">
+        <h2>{{ stats.expired_orgs }}</h2>
+        <p style="color: #666;">Expired</p>
+    </div>
+    <div class="card text-center">
+        <h2>{{ stats.total_elections }}</h2>
+        <p style="color: #666;">Total Elections</p>
+    </div>
+    <div class="card text-center">
+        <h2>{{ stats.live_elections }}</h2>
+        <p style="color: #666;">Currently LIVE</p>
+    </div>
+</div>
+
+<div style="margin-bottom: 20px;">
+    <a href="{% url 'organization_onboard' %}" class="btn btn-success">+ Onboard New Organization</a>
+</div>
+
+<h2>Organizations</h2>
+<table>
+    <thead>
+        <tr><th>Name</th><th>Slug</th><th>Status</th><th>Expires</th><th>Admins</th><th>Elections</th></tr>
+    </thead>
+    <tbody>
+        {% for org in organizations %}
+        <tr>
+            <td><strong>{{ org.name }}</strong></td>
+            <td>{{ org.slug }}</td>
+            <td><span class="status-badge status-{{ org.subscription_status }}">{{ org.subscription_status }}</span></td>
+            <td>{{ org.subscription_expires_at|date:"M d, Y" }}</td>
+            <td>{{ org.admins.count }}/3</td>
+            <td>{{ org.elections.count }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" style="text-align: center;">No organizations onboarded yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

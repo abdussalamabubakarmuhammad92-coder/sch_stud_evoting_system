@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ organization.name }}{% endblock %}
+{% block content %}
+<div class="card text-center">
+    {% if organization.logo %}
+        <img src="{{ organization.logo.url }}" alt="{{ organization.name }}" style="max-height: 100px; margin-bottom: 20px;">
+    {% endif %}
+    <h1>{{ organization.name }}</h1>
+    <p style="color: #666; margin: 15px 0;">E-Voting Portal</p>
+    <div style="margin-top: 25px;">
+        <a href="{% url 'voter_login' organization.slug %}" class="btn">Voter Login</a>
+        <a href="{% url 'voter_register_step1' organization.slug %}" class="btn btn-success">Register to Vote</a>
+    </div>
+</div>
+{% endblock %}

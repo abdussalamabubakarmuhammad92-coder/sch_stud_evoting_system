@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Register State Association — {{ organization.name }}{% endblock %}
+{% block content %}
+<h1>Register for State Association</h1>
+<p style="color: #666; margin-bottom: 25px;">Select your state of origin to join the corresponding state association.</p>
+
+<div class="card" style="max-width: 500px;">
+    <form method="post">
+        {% csrf_token %}
+        
+        <div style="margin-bottom: 20px;">
+            <label><strong>State of Origin</strong></label>
+            <select name="state" required style="width: 100%; padding: 10px; margin-top: 8px; font-size: 1em;">
+                <option value="">-- Select your state --</option>
+                {% for code, name in states %}
+                <option value="{{ code }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <p style="color: #e53e3e; margin-bottom: 15px; font-size: 0.9em;">
+            ⚠️ This can only be changed before a state association election goes live. Choose carefully.
+        </p>
+        
+        <button type="submit" class="btn btn-success">Register</button>
+        <a href="{% url 'voter_dashboard' organization.slug %}" class="btn" style="background: #666;">Cancel</a>
+    </form>
+</div>
+
+{% endblock %}

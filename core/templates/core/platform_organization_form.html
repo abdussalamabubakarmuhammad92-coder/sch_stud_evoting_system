@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ action }} Organization{% endblock %}
+{% block content %}
+<div class="card" style="max-width: 700px;">
+    <h2>{{ action }} Organization</h2>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+
+        <h3 style="margin-top: 20px;">Organization Details</h3>
+        {% for field in form %}
+        <div class="form-group">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.help_text %}<small style="color: #666;">{{ field.help_text }}</small>{% endif %}
+        </div>
+        {% endfor %}
+
+        <h3 style="margin-top: 30px;">Admin Accounts (Exactly 3 Required)</h3>
+        <div class="alert alert-info" style="font-size: 0.9em;">
+            Each Organization must have exactly 3 admins. One will be designated as Primary.
+        </div>
+
+        <div class="form-group">
+            <label>Admin 1 Email</label>
+            <input type="email" name="admin1_email" required class="form-control" style="width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 5px;">
+        </div>
+        <div class="form-group">
+            <label>Admin 2 Email</label>
+            <input type="email" name="admin2_email" required class="form-control" style="width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 5px;">
+        </div>
+        <div class="form-group">
+            <label>Admin 3 Email</label>
+            <input type="email" name="admin3_email" required class="form-control" style="width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 5px;">
+        </div>
+
+        <div class="form-group">
+            <label>Primary Admin (default contact)</label>
+            <select name="primary_admin" required style="width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 5px;">
+                <option value="">Select Primary Admin</option>
+                <option value="admin1">Admin 1</option>
+                <option value="admin2">Admin 2</option>
+                <option value="admin3">Admin 3</option>
+            </select>
+        </div>
+
+        <button type="submit" class="btn btn-success">{{ action }} Organization</button>
+        <a href="{% url 'platform_dashboard' %}" class="btn" style="background: #718096;">Cancel</a>
+    </form>
+</div>
+{% endblock %}

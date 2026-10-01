@@ -154,8 +154,15 @@ def send_otp(voter, otp_code, purpose):
 # ============================================================================
 # Audit Logging
 # ============================================================================
-def log_action(action_type, description, actor="SYSTEM", election=None, metadata=None):
-    """Create an audit log entry."""
+def log_action(action_type, description, actor="SYSTEM", election=None, metadata=None, critical=False):
+    """
+    Create an audit log entry.
+
+    critical=True is required for security-relevant state changes recorded
+    inside a transaction (vote casting, election state changes): the audit
+    write then participates in that transaction, so a failure rolls the whole
+    action back instead of leaving an unaudited change behind.
+    """
     try:
         AuditLog.objects.create(
             election=election,
@@ -165,8 +172,10 @@ def log_action(action_type, description, actor="SYSTEM", election=None, metadata
             metadata=metadata or {},
         )
         logger.info(f"AUDIT: [{action_type}] {actor} — {description}")
-    except Exception as e:
-        logger.error(f"Failed to create audit log: {e}")
+    except Exception:
+        if critical:
+            raise
+        logger.exception("Audit log write failed for action '%s'; the action itself was not rolled back.", action_type)
 
 
 # ============================================================================
@@ -206,39 +215,45 @@ def transition_election_state(election, new_state, actor="SYSTEM"):
     """
     Safely transition an election to a new state.
     Handles side effects (tally hash generation, audit logging, report generation).
+
+    The election row is locked for the duration of the transition so state
+    changes serialize against vote casting: a ballot either commits before
+    the tally is frozen, or sees the election closed.
     """
     from django.db import transaction
     from .models import PostElectionReport
 
-    if not election.can_transition_to(new_state):
-        raise ValueError(
-            f"Cannot transition from {election.state} to {new_state}"
-        )
-
     with transaction.atomic():
-        old_state = election.state
-        election.state = new_state
+        locked = type(election).objects.select_for_update().get(pk=election.pk)
+        if not locked.can_transition_to(new_state):
+            raise ValueError(
+                f"Cannot transition from {locked.state} to {new_state}"
+            )
+
+        old_state = locked.state
+        locked.state = new_state
 
         if new_state == "CLOSED":
-            election.actual_closed_at = timezone.now()
+            locked.actual_closed_at = timezone.now()
             # Generate tally hash
-            election.final_tally_hash = election.generate_tally_hash()
-            election.results_published_at = timezone.now()
+            locked.final_tally_hash = locked.generate_tally_hash()
+            locked.results_published_at = timezone.now()
 
             # Create post-election report placeholder
-            PostElectionReport.objects.get_or_create(election=election)
+            PostElectionReport.objects.get_or_create(election=locked)
 
-        election.save()
+        locked.save()
 
         log_action(
             action_type="ELECTION_STATE_CHANGE",
-            description=f"Election '{election.title}' transitioned from {old_state} to {new_state}",
+            description=f"Election '{locked.title}' transitioned from {old_state} to {new_state}",
             actor=actor,
-            election=election,
+            election=locked,
             metadata={"old_state": old_state, "new_state": new_state},
+            critical=True,
         )
 
-    return election
+    return locked
 
 
 # ============================================================================
@@ -264,6 +279,16 @@ def cast_vote(voter, position, candidate):
         return False, "This election is not currently open for voting."
 
     with transaction.atomic():
+        # Lock the election row and re-validate its state INSIDE the
+        # transaction. This serializes the vote against election closure:
+        # either this ballot commits before the closing transaction takes the
+        # election row lock (and is included in the frozen tally), or the
+        # election is already closed and the vote is rejected here. No ballot
+        # can be recorded after the final tally hash is computed.
+        locked_election = type(election).objects.select_for_update().get(pk=election.pk)
+        if locked_election.state != "LIVE":
+            return False, "This election is not currently open for voting."
+
         # Lock the voter row for the duration of this vote. Because the Vote
         # table intentionally has no voter foreign key, the voter-position
         # participation record is the concurrency guard. On PostgreSQL this
@@ -283,6 +308,7 @@ def cast_vote(voter, position, candidate):
             actor="SYSTEM",
             election=election,
             metadata={"position": position.name},
+            critical=True,
         )
 
     return True, "Vote cast successfully."

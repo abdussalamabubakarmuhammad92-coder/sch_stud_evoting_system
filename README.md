@@ -69,7 +69,13 @@ The voting invariant is enforced inside a database transaction. Because the anon
 
 This serializes simultaneous vote attempts from the same voter on PostgreSQL while preserving the separation between voter identity and ballot records.
 
+Vote casting and election closing also coordinate on the election row: both operations lock it and re-validate the election state inside their transactions. A ballot therefore either commits before the closing transaction freezes the tally, or is rejected — a vote can never be recorded after the final tally hash is computed.
+
 Automated tests cover sequential duplicate attempts and a PostgreSQL-only concurrent-vote test.
+
+## Tally integrity — read this before trusting the hash
+
+The final tally hash (SHA-256 of the frozen counts) is an **integrity checksum, not cryptographic proof**. It is stored in the same database as the tally it covers, so someone who can alter the database could alter both. The hash detects accidental corruption and narrows the window for tampering only if you **compare it against a copy recorded outside the system**: the results CSV embeds the hash, and the school should save that CSV (or the hash itself) to external storage at the moment an election closes.
 
 ## Security considerations
 

@@ -4,7 +4,7 @@ A Django-based electronic voting platform designed for student-government electi
 
 > **Project status:** portfolio / educational system. This repository is not presented as a certified or cryptographically verifiable public-election system.
 
-> **Change note:** multi-tenancy (multi-organization support) has been removed. The system is now a single-school deployment: one installation serves one institution. The `Organization`, platform-owner and invitation-code machinery, per-organization subscription gating, and `/org/<slug>/` URL routing no longer exist. Roles are simplified to school admins, election officers (observers), and student voters. The earlier multi-tenant design remains viewable in the git history.
+> **Design evolution:** this project began as a multi-tenant SaaS experiment — one deployment serving many institutions, with subscription gating and platform-owner tooling. In practice that model fit the domain poorly: an election is an institutional event with a single accountable owner, so the tenancy layer added complexity exactly where trust and simplicity matter most. The current version is a deliberate single-school design — one installation, one institution, three roles (school admins, election officers, student voters) — while everything that makes the system interesting (anonymous ballots, concurrency protection, OTP flows, audit logging, tally integrity) is unchanged. The earlier multi-tenant architecture remains viewable in the git history for anyone curious about the evolution.
 
 ## What this project demonstrates
 

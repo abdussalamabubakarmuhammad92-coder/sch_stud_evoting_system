@@ -4,7 +4,7 @@
 
 ### Web layer
 
-Django views receive requests, resolve organization/election context, enforce authentication and role checks, validate forms, and invoke domain utilities.
+Django views receive requests, resolve election context, enforce authentication and role checks, validate forms, and invoke domain utilities.
 
 ### Domain utilities
 
@@ -23,7 +23,7 @@ PostgreSQL is the intended production database. Local development can use SQLite
 
 Major model groups:
 
-- Organization and subscription state
+- School configuration
 - Users and role-specific profiles
 - Election categories, elections, positions, and candidates
 - Verified voter records and registered voters
@@ -34,7 +34,7 @@ Major model groups:
 
 ### Background processing
 
-Celery uses Redis as its broker/result backend for scheduled election-transition and subscription-warning tasks.
+Celery uses Redis as its broker/result backend for scheduled election-transition tasks.
 
 ## Vote request flow
 
@@ -42,8 +42,8 @@ Celery uses Redis as its broker/result backend for scheduled election-transition
 POST /org/<org>/election/<id>/position/<id>/vote/
         │
         ├── authenticate request
-        ├── resolve organization/election/position
-        ├── verify voter belongs to organization
+        ├── resolve election/position
+        ├── verify voter eligibility
         ├── verify election is LIVE
         ├── verify voter eligibility
         ├── verify candidate belongs to position and is APPROVED

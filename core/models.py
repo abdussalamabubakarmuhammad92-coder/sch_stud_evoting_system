@@ -2,11 +2,15 @@
 SUG E-Voting Platform — Data Models
 Companion to: SUG_EVoting_Master_Blueprint.md
 Built per: SUG evoting data model specification.md
+
+Single-school deployment: the multi-tenancy layer (Organization,
+OrganizationAdmin, per-org subscription gating, platform-owner onboarding and
+admin invitation codes) has been removed. One deployment serves one school.
 """
 import hashlib
 import secrets
 from django.contrib.auth.models import AbstractUser
-from django.db import models, transaction
+from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
@@ -16,18 +20,16 @@ from django.utils import timezone
 # ============================================================================
 class User(AbstractUser):
     """
-    Custom user model. All platform users (Platform Owner, Organization Admin,
-    Election Officer, Voter) use this table. Role differentiation happens via
-    related models (OrganizationAdmin, ElectionOfficer, StudentVoter).
+    Custom user model. All platform users (School Admin, Election Officer,
+    Voter) use this table. Role differentiation happens via related models
+    (ElectionOfficer, StudentVoter).
     """
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=20, blank=True)
-    is_platform_owner = models.BooleanField(default=False)
 
     # Track user type for quick checks (not authoritative — always check related tables)
     USER_TYPE_CHOICES = [
-        ("PLATFORM_OWNER", "Platform Owner"),
-        ("ORG_ADMIN", "Organization Admin"),
+        ("ADMIN", "School Admin"),
         ("ELECTION_OFFICER", "Election Officer"),
         ("VOTER", "Voter"),
         ("STAFF", "Staff"),
@@ -47,88 +49,9 @@ class User(AbstractUser):
 
 
 # ============================================================================
-# 1. Organization [Blueprint §2]
-# ============================================================================
-class Organization(models.Model):
-    name = models.CharField(max_length=200)
-    slug = models.SlugField(unique=True)
-    logo = models.ImageField(upload_to="org_logos/", blank=True, null=True)
-
-    subscription_status = models.CharField(
-        max_length=20,
-        choices=[
-            ("ACTIVE", "Active"),
-            ("EXPIRED", "Expired"),
-            ("GRACE", "Grace Period"),
-        ],
-        default="ACTIVE",
-    )
-    subscription_expires_at = models.DateTimeField()
-
-    # Primary admin contact for communications
-    primary_admin_contact = models.EmailField(blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["name"]
-
-    def __str__(self):
-        return self.name
-
-    def is_subscription_active(self):
-        """Check if subscription is currently valid."""
-        if self.subscription_status == "ACTIVE":
-            return timezone.now() < self.subscription_expires_at
-        return self.subscription_status == "GRACE"
-
-
-# ============================================================================
-# 2. OrganizationAdmin [Blueprint §7.1]
-# ============================================================================
-class OrganizationAdmin(models.Model):
-    """
-    Exactly three per Organization, one designated Primary.
-    The 'exactly three' rule is enforced at the application/validation layer.
-    """
-    organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE, related_name="admins"
-    )
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    is_primary = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["organization"],
-                condition=models.Q(is_primary=True),
-                name="one_primary_admin_per_org",
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.user.email} — Admin of {self.organization.name}"
-
-    def clean(self):
-        # Enforce exactly-three-admins at the model level as well
-        if self.pk is None:  # Creating new
-            current_count = OrganizationAdmin.objects.filter(
-                organization=self.organization
-            ).count()
-            if current_count >= 3:
-                raise ValidationError(
-                    "This Organization already has the maximum of 3 admins."
-                )
-        super().clean()
-
-# ============================================================================
 # 3. ElectionOfficer ("Election Observer") [Blueprint §7, §10]
 # ============================================================================
 class ElectionOfficer(models.Model):
-    organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE, related_name="officers"
-    )
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     assigned_election = models.ForeignKey(
         "Election",
@@ -140,7 +63,7 @@ class ElectionOfficer(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.user.email} — Officer at {self.organization.name}"
+        return f"{self.user.email} — Election Officer"
 
 
 # ============================================================================
@@ -148,7 +71,7 @@ class ElectionOfficer(models.Model):
 # ============================================================================
 
 # ============================================================================
-# 4.5. ElectionCategory [New — Faculty / State Association / SUG tabs]
+# 4.5. ElectionCategory [Faculty / State Association / SUG tabs]
 # ============================================================================
 class ElectionCategory(models.Model):
     """
@@ -160,9 +83,6 @@ class ElectionCategory(models.Model):
         ("SUG", "SUG Election"),
     ]
 
-    organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE, related_name="election_categories"
-    )
     category_type = models.CharField(max_length=20, choices=CATEGORY_TYPES)
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=220, unique=True)
@@ -178,9 +98,6 @@ class ElectionCategory(models.Model):
 class Election(models.Model):
     category = models.ForeignKey(
         ElectionCategory, on_delete=models.CASCADE, related_name="elections"
-    )
-    organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE, related_name="elections", editable=False
     )
     title = models.CharField(max_length=200)  # e.g. "2026 SUG General Elections"
 
@@ -235,7 +152,7 @@ class Election(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.title} ({self.organization.name})"
+        return self.title
 
     def is_live(self):
         return self.state == "LIVE"
@@ -337,11 +254,7 @@ class VerifiedVoterRecord(models.Model):
     The official student data supplied by the school's ICT/registry department.
     Registration is only possible where a matching VerifiedVoterRecord exists.
     """
-    organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE, related_name="verified_voters"
-    )
-
-    matric_number = models.CharField(max_length=30)
+    matric_number = models.CharField(max_length=30, unique=True)
     official_email = models.EmailField(blank=True, null=True)
     official_phone = models.CharField(max_length=20, blank=True, null=True)
 
@@ -353,12 +266,11 @@ class VerifiedVoterRecord(models.Model):
     imported_by = models.CharField(max_length=200, blank=True)
 
     class Meta:
-        unique_together = ("organization", "matric_number")
         verbose_name = "Verified Voter Record"
         verbose_name_plural = "Verified Voter Records"
 
     def __str__(self):
-        return f"{self.matric_number} ({self.organization.name})"
+        return self.matric_number
 
     def get_strict_match_field(self):
         """
@@ -380,14 +292,11 @@ class StudentVoter(models.Model):
     Distinct from VerifiedVoterRecord — this is 'the account a student has
     actually created' vs 'who the school confirms is a real student'.
     """
-    organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE, related_name="voters"
-    )
     user = models.OneToOneField(
         User, on_delete=models.CASCADE, null=True, blank=True
     )
 
-    matric_number = models.CharField(max_length=30)
+    matric_number = models.CharField(max_length=30, unique=True)
     email = models.EmailField()  # required — see §15.7
     phone_number = models.CharField(max_length=20)  # required — see §15.7
 
@@ -408,12 +317,11 @@ class StudentVoter(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("organization", "matric_number")
         verbose_name = "Student Voter"
         verbose_name_plural = "Student Voters"
 
     def __str__(self):
-        return f"{self.matric_number} ({self.organization.name})"
+        return self.matric_number
 
     def has_voted_for_position(self, position):
         return self.voted_positions.filter(pk=position.pk).exists()
@@ -501,7 +409,7 @@ class OTPVerification(models.Model):
 
 
 # ============================================================================
-# 11.5. StateAssociationMembership [New — State association registration]
+# 11.5. StateAssociationMembership [State association registration]
 # ============================================================================
 class StateAssociationMembership(models.Model):
     """
@@ -563,9 +471,6 @@ class RecognizedDevice(models.Model):
 # 12. AuditLog [Blueprint §9 — used across nearly every section]
 # ============================================================================
 class AuditLog(models.Model):
-    organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE, related_name="audit_logs"
-    )
     election = models.ForeignKey(
         Election,
         on_delete=models.SET_NULL,
@@ -595,29 +500,6 @@ class AuditLog(models.Model):
     def __str__(self):
         return f"[{self.action_type}] {self.actor} @ {self.timestamp}"
 
-# ============================================================================
-# 13.5. AdminInvitationCode [New — Admin registration via code]
-# ============================================================================
-class AdminInvitationCode(models.Model):
-    """
-    One-time use codes for org admin registration.
-    Generated by Platform Owner, distributed by Stakeholder Lead.
-    """
-    organization = models.ForeignKey(
-        Organization, on_delete=models.CASCADE, related_name="invitation_codes"
-    )
-    code = models.CharField(max_length=50, unique=True)
-    invited_email = models.EmailField(blank=True, help_text="Email of the person this code was sent to")
-    invited_name = models.CharField(max_length=200, blank=True, help_text="Name of the person this code was sent to")
-    used_by = models.OneToOneField(User, null=True, blank=True, on_delete=models.SET_NULL)
-    used_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def is_used(self):
-        return self.used_by is not None
-
-    def __str__(self):
-        return f"{self.code} — {'USED' if self.is_used() else 'AVAILABLE'}"
 
 # ============================================================================
 # 13. PostElectionReport [Blueprint §12]
@@ -640,4 +522,3 @@ class PostElectionReport(models.Model):
 
     def __str__(self):
         return f"Report for {self.election.title}"
-

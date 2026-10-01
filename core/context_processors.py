@@ -1,45 +1,21 @@
 """
 Context processors for SUG E-Voting Platform.
 """
-from .models import Organization
+from django.conf import settings
 
 
-def organization_context(request):
-    """
-    Add organization context to all templates based on subdomain or session.
-    For now, uses a session variable or defaults to the first active organization.
-    In production, you'd use subdomain routing: fud.sugevoting.ng
-    """
+def school_context(request):
+    """School identity and role flags for all templates."""
     context = {
-        "current_organization": None,
-        "is_org_admin": False,
+        "school_name": settings.SCHOOL_NAME,
+        "is_admin": False,
         "is_election_officer": False,
-        "is_platform_owner": False,
+        "is_voter": False,
     }
 
     if request.user.is_authenticated:
-        context["is_platform_owner"] = request.user.is_platform_owner
-
-        # Check if user is an org admin
-        if hasattr(request.user, "organizationadmin"):
-            context["is_org_admin"] = True
-            context["current_organization"] = request.user.organizationadmin.organization
-
-        # Check if user is an election officer
-        elif hasattr(request.user, "electionofficer"):
-            context["is_election_officer"] = True
-            context["current_organization"] = request.user.electionofficer.organization
-
-        # Check if user is a voter
-        elif hasattr(request.user, "studentvoter"):
-            context["current_organization"] = request.user.studentvoter.organization
-
-    # Also check session for organization slug (for non-logged-in visitors)
-    org_slug = request.session.get("organization_slug")
-    if org_slug and not context["current_organization"]:
-        try:
-            context["current_organization"] = Organization.objects.get(slug=org_slug)
-        except Organization.DoesNotExist:
-            pass
+        context["is_admin"] = request.user.user_type == "ADMIN"
+        context["is_election_officer"] = request.user.user_type == "ELECTION_OFFICER"
+        context["is_voter"] = request.user.user_type == "VOTER"
 
     return context

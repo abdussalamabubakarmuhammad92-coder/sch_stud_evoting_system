@@ -51,23 +51,18 @@
 <body>
     <header>
         <div class="container">
-            <h1><a href="{% url 'home' %}" style="color: white; text-decoration: none;">E-Voting Platform</a></h1>
+            <h1><a href="{% url 'home' %}" style="color: white; text-decoration: none;">{{ school_name }}</a></h1>
             <nav>
                 {% if user.is_authenticated %}
-                    {% if is_org_admin %}
+                    {% if is_admin %}
                         <a href="{% url 'admin_dashboard' %}">Admin</a>
                     {% endif %}
                     {% if is_election_officer %}
                         <a href="{% url 'observer_dashboard' %}">Observer</a>
                     {% endif %}
-                    {% if is_platform_owner %}
-                        {% if request.resolver_match.url_name != 'platform_dashboard' %}
-                            <a href="{% url 'platform_dashboard' %}">Platform</a>
-                        {% endif %}
-                    {% endif %}
                     <a href="{% url 'logout' %}">Logout</a>
                 {% else %}
-                    <a href="{% url 'home' %}">Organizations</a>
+                    <a href="{% url 'voter_login' %}">Student Login</a>
                     <a href="{% url 'admin_login' %}">Admin Login</a>
                 {% endif %}
             </nav>

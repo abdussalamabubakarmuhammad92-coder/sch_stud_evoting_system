@@ -1,14 +1,16 @@
 # SUG E-Voting Platform
 
-A Django-based electronic voting platform designed for student-government elections. The system models organizations, voter eligibility, role-based administration, election lifecycles, candidate screening, OTP verification, anonymous ballot records, audit logging, and final-tally integrity checks.
+A Django-based electronic voting platform designed for student-government elections. The system models a single school's voter eligibility, role-based administration, election lifecycles, candidate screening, OTP verification, anonymous ballot records, audit logging, and final-tally integrity checks.
 
 > **Project status:** portfolio / educational system. This repository is not presented as a certified or cryptographically verifiable public-election system.
+
+> **Change note:** multi-tenancy (multi-organization support) has been removed. The system is now a single-school deployment: one installation serves one institution. The `Organization`, platform-owner and invitation-code machinery, per-organization subscription gating, and `/org/<slug>/` URL routing no longer exist. Roles are simplified to school admins, election officers (observers), and student voters. The earlier multi-tenant design remains viewable in the git history.
 
 ## What this project demonstrates
 
 - Django 5 + PostgreSQL architecture
-- Multi-organization (tenant-scoped) data model
-- Role-based workflows for platform owners, organization admins, election officers, and voters
+- Single-school (one institution per deployment) data model
+- Role-based workflows for school admins, election officers, and voters
 - Voter registration against institution-supplied records
 - OTP verification for registration, new-device login, and password reset
 - Election lifecycle management: `DRAFT → LIVE → CLOSED → ARCHIVED`
@@ -29,7 +31,7 @@ Browser
 Django views / forms / decorators
    │
    ├──────── Authentication & OTP
-   ├──────── Organization / role authorization
+   ├──────── Role authorization
    ├──────── Election lifecycle
    ├──────── Eligibility checks
    ├──────── Anonymous vote recording
@@ -38,7 +40,7 @@ Django views / forms / decorators
    ▼
 PostgreSQL
    │
-   ├── Organization / users / voters
+   ├── Users / voters
    ├── Elections / positions / candidates
    ├── Vote records
    └── Audit / verification records
@@ -111,12 +113,15 @@ DJANGO_SECRET_KEY=<long-random-development-secret>
 
 When `DEBUG=True` and no `DATABASE_URL` is supplied, the project uses local SQLite. Production must use PostgreSQL.
 
-### 5. Migrate and run
+### 5. Migrate, create the first admin, and run
 
 ```bash
 python manage.py migrate
+python manage.py create_school_admin --email admin@school.edu.ng --role admin
 python manage.py runserver
 ```
+
+`--role officer` creates an election officer (observer) account instead.
 
 ## Production configuration
 

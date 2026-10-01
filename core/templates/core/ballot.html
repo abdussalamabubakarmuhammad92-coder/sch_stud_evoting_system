@@ -29,8 +29,8 @@
                         ✅ You have already voted in this position.
                     </div>
                 {% else %}
-                <form method="post" action="{% url 'cast_vote_view' organization.slug election.id item.position.id %}"
-                      hx-post="{% url 'cast_vote_view' organization.slug election.id item.position.id %}"
+                <form method="post" action="{% url 'cast_vote_view' election.id item.position.id %}"
+                      hx-post="{% url 'cast_vote_view' election.id item.position.id %}"
                       hx-target="#position-{{ item.position.id }}"
                       hx-swap="outerHTML">
                     {% csrf_token %}
@@ -50,6 +50,6 @@
 {% endfor %}
 
 <div style="text-align: center; margin-top: 30px;">
-    <a href="{% url 'voter_dashboard' organization.slug %}" class="btn">Back to Dashboard</a>
+    <a href="{% url 'voter_dashboard' %}" class="btn">Back to Dashboard</a>
 </div>
 {% endblock %}

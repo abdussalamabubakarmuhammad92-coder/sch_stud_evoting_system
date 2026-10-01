@@ -11,7 +11,6 @@ from core.models import (
     Candidate,
     Election,
     ElectionCategory,
-    Organization,
     Position,
     StudentVoter,
     User,
@@ -22,25 +21,12 @@ from core.utils import cast_vote
 
 class VotingSecurityTests(TestCase):
     def setUp(self):
-        expires = timezone.now() + timedelta(days=30)
-        self.org = Organization.objects.create(
-            name="Test University",
-            slug="test-university",
-            subscription_expires_at=expires,
-        )
-        self.other_org = Organization.objects.create(
-            name="Other University",
-            slug="other-university",
-            subscription_expires_at=expires,
-        )
         self.category = ElectionCategory.objects.create(
-            organization=self.org,
             category_type="SUG",
             name="SUG",
             slug="test-sug",
         )
         self.election = Election.objects.create(
-            organization=self.org,
             category=self.category,
             title="Test Election",
             state="LIVE",
@@ -65,7 +51,6 @@ class VotingSecurityTests(TestCase):
             password="StrongPassword123!",
         )
         self.voter = StudentVoter.objects.create(
-            organization=self.org,
             user=user,
             matric_number="TEST/001",
             email="voter@example.com",
@@ -82,23 +67,12 @@ class VotingSecurityTests(TestCase):
         self.assertIn("already voted", message)
         self.assertEqual(Vote.objects.filter(position=self.position).count(), 1)
 
-    def test_cross_organization_vote_is_rejected(self):
-        other_user = User.objects.create_user(
-            username="other@example.com",
-            email="other@example.com",
-            password="StrongPassword123!",
-        )
-        other_voter = StudentVoter.objects.create(
-            organization=self.other_org,
-            user=other_user,
-            matric_number="OTHER/001",
-            email="other@example.com",
-            phone_number="08111111111",
-            is_activated=True,
-        )
-        success, message = cast_vote(other_voter, self.position, self.candidate)
+    def test_vote_in_non_live_election_is_rejected(self):
+        self.election.state = "DRAFT"
+        self.election.save()
+        success, message = cast_vote(self.voter, self.position, self.candidate)
         self.assertFalse(success)
-        self.assertIn("organization", message)
+        self.assertIn("not currently open", message)
         self.assertEqual(Vote.objects.count(), 0)
 
     def test_ballot_view_never_exposes_another_voters_candidate(self):
@@ -108,7 +82,7 @@ class VotingSecurityTests(TestCase):
         response = client.get(
             reverse(
                 "ballot_view",
-                kwargs={"slug": self.org.slug, "election_id": self.election.id},
+                kwargs={"election_id": self.election.id},
             )
         )
         self.assertEqual(response.status_code, 200)
@@ -119,19 +93,12 @@ class VotingSecurityTests(TestCase):
 class OTPAndElectionStateTests(TestCase):
     def test_otp_is_time_limited_and_failed_attempts_lock(self):
         # This test is intentionally model-level; delivery is external infrastructure.
-        expires = timezone.now() + timedelta(days=30)
-        org = Organization.objects.create(
-            name="OTP University",
-            slug="otp-university",
-            subscription_expires_at=expires,
-        )
         user = User.objects.create_user(
             username="otp@example.com",
             email="otp@example.com",
             password="StrongPassword123!",
         )
         voter = StudentVoter.objects.create(
-            organization=org,
             user=user,
             matric_number="OTP/001",
             email="otp@example.com",
@@ -156,20 +123,12 @@ class OTPAndElectionStateTests(TestCase):
         self.assertTrue(otp.is_locked())
 
     def test_election_state_transitions_are_explicit(self):
-        expires = timezone.now() + timedelta(days=30)
-        org = Organization.objects.create(
-            name="State University",
-            slug="state-university",
-            subscription_expires_at=expires,
-        )
         category = ElectionCategory.objects.create(
-            organization=org,
             category_type="SUG",
             name="SUG",
             slug="state-sug",
         )
         election = Election.objects.create(
-            organization=org,
             category=category,
             title="State Election",
         )
@@ -184,20 +143,12 @@ class ConcurrentVotingTests(TransactionTestCase):
     reset_sequences = True
 
     def setUp(self):
-        expires = timezone.now() + timedelta(days=30)
-        org = Organization.objects.create(
-            name="Concurrency University",
-            slug="concurrency-university",
-            subscription_expires_at=expires,
-        )
         category = ElectionCategory.objects.create(
-            organization=org,
             category_type="SUG",
             name="SUG",
             slug="concurrency-sug",
         )
         election = Election.objects.create(
-            organization=org,
             category=category,
             title="Concurrent Election",
             state="LIVE",
@@ -212,7 +163,6 @@ class ConcurrentVotingTests(TransactionTestCase):
             password="StrongPassword123!",
         )
         voter = StudentVoter.objects.create(
-            organization=org,
             user=user,
             matric_number="CON/001",
             email="concurrent@example.com",

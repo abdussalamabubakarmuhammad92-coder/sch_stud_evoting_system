@@ -1,6 +1,6 @@
 # Audit Logging
 
-The `AuditLog` model records organization-scoped events with:
+The `AuditLog` model records school-wide events with:
 
 - action type
 - description

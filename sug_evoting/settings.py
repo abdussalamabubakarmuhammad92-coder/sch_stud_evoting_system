@@ -10,6 +10,9 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# School identity (shown across the UI)
+SCHOOL_NAME = os.getenv("SCHOOL_NAME", "SUG E-Voting Platform")
+
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
@@ -65,7 +68,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                "core.context_processors.organization_context",
+                "core.context_processors.school_context",
             ],
         },
     },

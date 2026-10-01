@@ -1,26 +1,27 @@
 """
 Views for SUG E-Voting Platform.
 Organized by user role and functionality.
+
+Single-school deployment: the multi-tenancy layer (organizations, platform
+owner, org-slug routing, invitation codes and subscription gating) has been
+removed. One deployment serves one school.
 """
 import csv
 import io
-import json
+from datetime import datetime
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse, HttpResponseForbidden, Http404, HttpResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_POST, require_http_methods
-from django.db.models import Count, Q
 from django.utils import timezone
-from datetime import datetime
 from django.conf import settings
 
 
 from .models import (
     User,
-    Organization,
-    OrganizationAdmin,
     ElectionOfficer,
     Election,
     Position,
@@ -32,7 +33,7 @@ from .models import (
     AuditLog,
     PostElectionReport,
     ElectionCategory,
-    AdminInvitationCode,
+    StateAssociationMembership,
 )
 from .forms import (
     VoterLoginForm,
@@ -46,7 +47,6 @@ from .forms import (
     CandidateForm,
     CandidateStatusForm,
     CSVImportForm,
-    OrganizationForm,
     ElectionCategoryForm
 )
 from .utils import (
@@ -57,7 +57,6 @@ from .utils import (
     transition_election_state,
     is_new_device,
     register_device,
-    generate_device_fingerprint,
 )
 
 
@@ -65,12 +64,12 @@ from .utils import (
 # Mixins & Decorators
 # ============================================================================
 def org_admin_required(view_func):
-    """Decorator ensuring user is an Organization Admin."""
+    """Decorator ensuring user is a School Admin."""
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return redirect("login")
-        if not hasattr(request.user, "organizationadmin"):
-            messages.error(request, "Access denied. Organization Admin required.")
+            return redirect("admin_login")
+        if request.user.user_type != "ADMIN":
+            messages.error(request, "Access denied. School Admin required.")
             return redirect("home")
         return view_func(request, *args, **kwargs)
     return wrapper
@@ -80,7 +79,7 @@ def election_officer_required(view_func):
     """Decorator ensuring user is an Election Officer."""
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return redirect("login")
+            return redirect("admin_login")
         if not hasattr(request.user, "electionofficer"):
             messages.error(request, "Access denied. Election Officer required.")
             return redirect("home")
@@ -88,77 +87,37 @@ def election_officer_required(view_func):
     return wrapper
 
 
-def platform_owner_required(view_func):
-    """Decorator ensuring user is a Platform Owner."""
-    def wrapper(request, *args, **kwargs):
-        if not request.user.is_authenticated or not request.user.is_platform_owner:
-            messages.error(request, "Access denied. Platform Owner required.")
-            return redirect("home")
-        return view_func(request, *args, **kwargs)
-    return wrapper
-
-
-def get_org_from_request(request):
-    """Get the organization from the current user's context."""
-    if hasattr(request.user, "organizationadmin"):
-        return request.user.organizationadmin.organization
-    elif hasattr(request.user, "electionofficer"):
-        return request.user.electionofficer.organization
-    elif hasattr(request.user, "studentvoter"):
-        return request.user.studentvoter.organization
-    return None
-
-
 # ============================================================================
 # Public Views
 # ============================================================================
 def home(request):
-    """Landing page showing all subscribed organizations."""
-    organizations = Organization.objects.filter(
-        subscription_status__in=["ACTIVE", "GRACE"]
-    ).order_by("name")
-    return render(request, "core/home.html", {"organizations": organizations})
+    """Landing page for the school's voting portal."""
+    refresh_states_and_commit = None  # elections open/close via the periodic task
 
-
-def organization_landing(request, slug):
-    """Organization-specific landing page."""
-    org = get_object_or_404(Organization, slug=slug)
-    request.session["organization_slug"] = slug
-
-    # Past elections for the collapsible results section
+    live_elections = Election.objects.filter(state="LIVE").select_related("category")
     past_elections = Election.objects.filter(
-        organization=org,
         state__in=["CLOSED", "ARCHIVED"],
-    ).order_by("-actual_closed_at")
+    ).order_by("-actual_closed_at")[:5]
 
-    return render(request, "core/organization_landing.html", {
-        "organization": org,
+    return render(request, "core/home.html", {
+        "live_elections": live_elections,
         "past_elections": past_elections,
-    })
-
-    return render(request, "core/organization_landing.html", {
-        "organization": org,
-        "elections": elections,
     })
 
 
 # ============================================================================
 # Authentication Views
 # ============================================================================
-def voter_login(request, slug):
+def voter_login(request):
     """Voter login using matric number + password."""
-    org = get_object_or_404(Organization, slug=slug)
-
     if request.method == "POST":
-        form = VoterLoginForm(request.POST, organization=org)
+        form = VoterLoginForm(request.POST)
         if form.is_valid():
             matric = form.cleaned_data["matric_number"]
             password = form.cleaned_data["password"]
 
             try:
-                voter = StudentVoter.objects.get(
-                    organization=org, matric_number=matric.upper()
-                )
+                voter = StudentVoter.objects.get(matric_number=matric.upper())
                 user = authenticate(request, username=voter.user.email, password=password)
 
                 if user is not None:
@@ -172,101 +131,21 @@ def voter_login(request, slug):
                         send_otp(voter, code, "NEW_DEVICE_LOGIN")
 
                         messages.info(request, "New device detected. Please verify with the OTP sent to your registered contact.")
-                        return redirect("new_device_otp", slug=slug)
+                        return redirect("new_device_otp")
 
                     login(request, user)
                     register_device(voter, request)
                     messages.success(request, f"Welcome back, {voter.matric_number}!")
-                    return redirect("voter_dashboard", slug=slug)
+                    return redirect("voter_dashboard")
                 else:
                     messages.error(request, "Invalid password.")
             except StudentVoter.DoesNotExist:
                 messages.error(request, "Matric number not found.")
     else:
-        form = VoterLoginForm(organization=org)
+        form = VoterLoginForm()
 
-    return render(request, "core/voter_login.html", {"form": form, "organization": org})
+    return render(request, "core/voter_login.html", {"form": form})
 
-def admin_register(request):
-    """Admin registration using invitation code."""
-    if request.method == "POST":
-        code = request.POST.get("code", "").strip().upper()
-        email = request.POST.get("email", "").strip()
-        name = request.POST.get("name", "").strip()
-        password = request.POST.get("password", "")
-        confirm_password = request.POST.get("confirm_password", "")
-
-        errors = []
-
-        if not code or not email or not name or not password:
-            errors.append("All fields are required.")
-        
-        if password != confirm_password:
-            errors.append("Passwords do not match.")
-        
-        if len(password) < 8:
-            errors.append("Password must be at least 8 characters.")
-
-        if not errors:
-            try:
-                invitation = AdminInvitationCode.objects.select_related("organization").get(code=code)
-            except AdminInvitationCode.DoesNotExist:
-                errors.append("Invalid invitation code.")
-            else:
-                if invitation.is_used():
-                    errors.append("This code has already been used.")
-                elif User.objects.filter(email=email).exists():
-                    errors.append("An account with this email already exists.")
-                else:
-                    # Check if org already has 3 admins
-                    admin_count = OrganizationAdmin.objects.filter(organization=invitation.organization).count()
-                    if admin_count >= 3:
-                        errors.append("This organization already has 3 admins.")
-                    else:
-                        # Determine if this person will be primary
-                        is_primary = (admin_count == 0)
-
-                        # Create user
-                        user = User.objects.create_user(
-                            username=email,
-                            email=email,
-                            password=password,
-                            user_type="ORG_ADMIN",
-                        )
-
-                        # Create org admin
-                        OrganizationAdmin.objects.create(
-                            organization=invitation.organization,
-                            user=user,
-                            is_primary=is_primary,
-                        )
-
-                        # Mark code as used
-                        invitation.used_by = user
-                        invitation.used_at = timezone.now()
-                        invitation.save()
-
-                        # Update org primary contact if this is primary admin
-                        if is_primary:
-                            invitation.organization.primary_admin_contact = email
-                            invitation.organization.save()
-
-                        # Log
-                        log_action(
-                            organization=invitation.organization,
-                            action_type="ADMIN_REGISTERED",
-                            description=f"Admin '{name}' ({email}) registered via invitation code",
-                            actor=email,
-                        )
-
-                        messages.success(request, f"Registration successful! You can now log in.")
-                        return redirect("admin_login")
-
-        if errors:
-            for error in errors:
-                messages.error(request, error)
-
-    return render(request, "core/admin_register.html")
 
 def admin_login(request):
     """Admin/Officer login using email + password."""
@@ -276,15 +155,10 @@ def admin_login(request):
             user = form.get_user()
             login(request, user)
 
-            if user.is_platform_owner:
-                return redirect("platform_dashboard")
-            elif hasattr(user, "organizationadmin"):
-                return redirect("admin_dashboard")
-            elif hasattr(user, "electionofficer"):
+            if hasattr(user, "electionofficer"):
                 return redirect("observer_dashboard")
             else:
-                messages.error(request, "Unauthorized access.")
-                return redirect("home")
+                return redirect("admin_dashboard")
     else:
         form = AdminLoginForm()
 
@@ -301,16 +175,15 @@ def logout_view(request):
 # ============================================================================
 # New Device OTP Verification
 # ============================================================================
-def new_device_otp(request, slug):
+def new_device_otp(request):
     """Verify OTP for new device login."""
-    org = get_object_or_404(Organization, slug=slug)
     voter_id = request.session.get("pending_login_voter_id")
 
     if not voter_id:
         messages.error(request, "Session expired. Please log in again.")
-        return redirect("voter_login", slug=slug)
+        return redirect("voter_login")
 
-    voter = get_object_or_404(StudentVoter, id=voter_id, organization=org)
+    voter = get_object_or_404(StudentVoter, id=voter_id)
 
     if request.method == "POST":
         form = OTPVerificationForm(request.POST)
@@ -327,13 +200,13 @@ def new_device_otp(request, slug):
                 if otp.is_expired():
                     messages.error(request, "OTP has expired. Please log in again.")
                     del request.session["pending_login_voter_id"]
-                    return redirect("voter_login", slug=slug)
-            
+                    return redirect("voter_login")
+
 
                 if otp.is_locked():
                     messages.error(request, "Too many incorrect attempts")
                     del request.session["pending_login_voter_id"]
-                    return redirect("voter_login", slug=slug)
+                    return redirect("voter_login")
 
                 if otp.verify_code(code):
                     otp.used = True
@@ -346,26 +219,24 @@ def new_device_otp(request, slug):
                     redirect_url = request.session.pop("pending_login_redirect", "voter_dashboard")
 
                     log_action(
-                        organization=org,
                         action_type="NEW_DEVICE_LOGIN",
                         description=f"New device verified for {voter.matric_number}",
                         actor=voter.matric_number,
                     )
 
                     messages.success(request, "Device verified successfully!")
-                    return redirect(redirect_url, slug=slug)
+                    return redirect(redirect_url)
                 else:
                     otp.register_failed_attempt()
                     messages.error(request, "Invalid OTP code.")
             except OTPVerification.DoesNotExist:
                 messages.error(request, "No pending OTP found. Please log in again.")
-                return redirect("voter_login", slug=slug)
+                return redirect("voter_login")
     else:
         form = OTPVerificationForm()
 
     return render(request, "core/otp_verify.html", {
         "form": form,
-        "organization": org,
         "purpose": "new_device",
     })
 
@@ -373,28 +244,23 @@ def new_device_otp(request, slug):
 # ============================================================================
 # Voter Registration Flow (3 Steps)
 # ============================================================================
-def voter_register_step1(request, slug):
+def voter_register_step1(request):
     """
     Step 1: Student enters matric, email, phone.
     System validates against VerifiedVoterRecord with strict-match rule.
     """
-    org = get_object_or_404(Organization, slug=slug)
-
     if request.method == "POST":
-        form = VoterRegistrationForm(request.POST, organization=org)
+        form = VoterRegistrationForm(request.POST)
         if form.is_valid():
             matric = form.cleaned_data["matric_number"]
             email = form.cleaned_data["email"]
             phone = form.cleaned_data["phone_number"]
 
             # Get verified record
-            vvr = VerifiedVoterRecord.objects.get(
-                organization=org, matric_number=matric
-            )
+            vvr = VerifiedVoterRecord.objects.get(matric_number=matric)
 
             # Create unactivated StudentVoter
             voter = StudentVoter.objects.create(
-                organization=org,
                 matric_number=matric,
                 email=email,
                 phone_number=phone,
@@ -414,26 +280,22 @@ def voter_register_step1(request, slug):
             request.session["registration_voter_id"] = voter.id
 
             messages.info(request, "An OTP has been sent to your registered contact. Please enter it below.")
-            return redirect("voter_register_step2", slug=slug)
+            return redirect("voter_register_step2")
     else:
-        form = VoterRegistrationForm(organization=org)
+        form = VoterRegistrationForm()
 
-    return render(request, "core/voter_register_step1.html", {
-        "form": form,
-        "organization": org,
-    })
+    return render(request, "core/voter_register_step1.html", {"form": form})
 
 
-def voter_register_step2(request, slug):
+def voter_register_step2(request):
     """Step 2: Verify OTP."""
-    org = get_object_or_404(Organization, slug=slug)
     voter_id = request.session.get("registration_voter_id")
 
     if not voter_id:
         messages.error(request, "Registration session expired. Please start again.")
-        return redirect("voter_register_step1", slug=slug)
+        return redirect("voter_register_step1")
 
-    voter = get_object_or_404(StudentVoter, id=voter_id, organization=org)
+    voter = get_object_or_404(StudentVoter, id=voter_id)
 
     if request.method == "POST":
         form = OTPVerificationForm(request.POST)
@@ -449,11 +311,11 @@ def voter_register_step2(request, slug):
 
                 if otp.is_expired():
                     messages.error(request, "OTP has expired. Please request a new one.")
-                    return redirect("voter_register_step2", slug=slug)
+                    return redirect("voter_register_step2")
 
                 if otp.is_locked():
                     messages.error(request, "Too many incorrect attempts. Please request a new code.")
-                    return redirect("voter_register_step2", slug=slug)
+                    return redirect("voter_register_step2")
 
                 if otp.verify_code(code):
                     otp.used = True
@@ -465,34 +327,32 @@ def voter_register_step2(request, slug):
                     request.session.modified = True
 
                     messages.success(request, "OTP verified! Now set your password.")
-                    return redirect("voter_register_step3", slug=slug)
+                    return redirect("voter_register_step3")
                 else:
                     otp.register_failed_attempt()
                     messages.error(request, "Invalid OTP code. Please try again.")
             except OTPVerification.DoesNotExist:
                 messages.error(request, "No pending OTP found. Please start registration again.")
-                return redirect("voter_register_step1", slug=slug)
+                return redirect("voter_register_step1")
     else:
         form = OTPVerificationForm()
 
     return render(request, "core/otp_verify.html", {
         "form": form,
-        "organization": org,
         "purpose": "registration",
         "voter": voter,
     })
 
-def voter_register_step3(request, slug):
+def voter_register_step3(request):
     """Step 3: Set password and activate account."""
-    org = get_object_or_404(Organization, slug=slug)
     voter_id = request.session.get("registration_voter_id")
     verified = request.session.get("registration_verified", False)
 
     if not voter_id or not verified:
         messages.error(request, "Registration session expired. Please start again.")
-        return redirect("voter_register_step1", slug=slug)
+        return redirect("voter_register_step1")
 
-    voter = get_object_or_404(StudentVoter, id=voter_id, organization=org)
+    voter = get_object_or_404(StudentVoter, id=voter_id)
 
     if request.method == "POST":
         form = SetPasswordForm(request.POST)
@@ -523,20 +383,18 @@ def voter_register_step3(request, slug):
             request.session.pop("registration_verified", None)
 
             log_action(
-                organization=org,
                 action_type="VOTER_REGISTERED",
                 description=f"Voter {voter.matric_number} completed registration",
                 actor=voter.matric_number,
             )
 
             messages.success(request, "Registration complete! Welcome to the platform.")
-            return redirect("voter_dashboard", slug=slug)
+            return redirect("voter_dashboard")
     else:
         form = SetPasswordForm()
 
     return render(request, "core/voter_register_step3.html", {
         "form": form,
-        "organization": org,
         "voter": voter,
     })
 
@@ -544,18 +402,16 @@ def voter_register_step3(request, slug):
 # ============================================================================
 # Password Reset Flow
 # ============================================================================
-def password_reset_request(request, slug):
+def password_reset_request(request):
     """Request password reset via matric number."""
-    org = get_object_or_404(Organization, slug=slug)
-
     if request.method == "POST":
-        form = PasswordResetRequestForm(request.POST, organization=org)
+        form = PasswordResetRequestForm(request.POST)
         if form.is_valid():
             matric = form.cleaned_data["matric_number"]
 
             try:
                 voter = StudentVoter.objects.get(
-                    organization=org, matric_number=matric.upper(), is_activated=True
+                    matric_number=matric.upper(), is_activated=True
                 )
 
                 # Generate OTP
@@ -565,38 +421,33 @@ def password_reset_request(request, slug):
                 request.session["reset_voter_id"] = voter.id
 
                 log_action(
-                    organization=org,
                     action_type="PASSWORD_RESET_REQUESTED",
                     description=f"Password reset requested for {matric}",
                     actor=matric,
                 )
 
                 messages.info(request, "A reset code has been sent to your registered contact.")
-                return redirect("password_reset_verify", slug=slug)
+                return redirect("password_reset_verify")
 
             except StudentVoter.DoesNotExist:
                 # Don't reveal whether matric exists
                 messages.info(request, "If this matric number is registered, a reset code has been sent.")
-                return redirect("voter_login", slug=slug)
+                return redirect("voter_login")
     else:
-        form = PasswordResetRequestForm(organization=org)
+        form = PasswordResetRequestForm()
 
-    return render(request, "core/password_reset_request.html", {
-        "form": form,
-        "organization": org,
-    })
+    return render(request, "core/password_reset_request.html", {"form": form})
 
 
-def password_reset_verify(request, slug):
+def password_reset_verify(request):
     """Verify OTP for password reset."""
-    org = get_object_or_404(Organization, slug=slug)
     voter_id = request.session.get("reset_voter_id")
 
     if not voter_id:
         messages.error(request, "Session expired. Please try again.")
-        return redirect("password_reset_request", slug=slug)
+        return redirect("password_reset_request")
 
-    voter = get_object_or_404(StudentVoter, id=voter_id, organization=org)
+    voter = get_object_or_404(StudentVoter, id=voter_id)
 
     if request.method == "POST":
         form = OTPVerificationForm(request.POST)
@@ -612,45 +463,43 @@ def password_reset_verify(request, slug):
 
                 if otp.is_expired():
                     messages.error(request, "Code has expired. Please request a new one.")
-                    return redirect("password_reset_request", slug=slug)
+                    return redirect("password_reset_request")
 
                 if otp.is_locked():
                     messages.error(request, "Too many incorrect attempts. Please request a new code")
-                    return redirect("password_reset_request", slug=slug)
+                    return redirect("password_reset_request")
 
                 if otp.verify_code(code):
                     otp.used = True
                     otp.save()
                     request.session["reset_verified"] = True
                     messages.success(request, "Code verified! Enter your new password.")
-                    return redirect("password_reset_new", slug=slug)
+                    return redirect("password_reset_new")
                 else:
                     otp.register_failed_attempt()
                     messages.error(request, "Invalid code.")
             except OTPVerification.DoesNotExist:
                 messages.error(request, "No pending reset found.")
-                return redirect("password_reset_request", slug=slug)
+                return redirect("password_reset_request")
     else:
         form = OTPVerificationForm()
 
     return render(request, "core/otp_verify.html", {
         "form": form,
-        "organization": org,
         "purpose": "password_reset",
     })
 
 
-def password_reset_new(request, slug):
+def password_reset_new(request):
     """Set new password after OTP verification."""
-    org = get_object_or_404(Organization, slug=slug)
     voter_id = request.session.get("reset_voter_id")
     verified = request.session.get("reset_verified", False)
 
     if not voter_id or not verified:
         messages.error(request, "Session expired. Please try again.")
-        return redirect("password_reset_request", slug=slug)
+        return redirect("password_reset_request")
 
-    voter = get_object_or_404(StudentVoter, id=voter_id, organization=org)
+    voter = get_object_or_404(StudentVoter, id=voter_id)
 
     if request.method == "POST":
         form = SetPasswordForm(request.POST)
@@ -663,39 +512,33 @@ def password_reset_new(request, slug):
             del request.session["reset_verified"]
 
             log_action(
-                organization=org,
                 action_type="PASSWORD_RESET_COMPLETED",
                 description=f"Password reset completed for {voter.matric_number}",
                 actor=voter.matric_number,
             )
 
             messages.success(request, "Password updated successfully! Please log in.")
-            return redirect("voter_login", slug=slug)
+            return redirect("voter_login")
     else:
         form = SetPasswordForm()
 
-    return render(request, "core/password_reset_new.html", {
-        "form": form,
-        "organization": org,
-    })
+    return render(request, "core/password_reset_new.html", {"form": form})
 
 
 # ============================================================================
 # Voter Dashboard & Voting
 # ============================================================================
 @login_required
-def voter_dashboard(request, slug):
+def voter_dashboard(request):
     """Voter dashboard showing 3-tab category system."""
-    org = get_object_or_404(Organization, slug=slug)
-
-    if not hasattr(request.user, "studentvoter") or request.user.studentvoter.organization != org:
+    if not hasattr(request.user, "studentvoter"):
         messages.error(request, "Access denied.")
         return redirect("home")
 
     voter = request.user.studentvoter
 
-    # Get all categories for this org, ordered by display_order
-    categories = ElectionCategory.objects.filter(organization=org).order_by("display_order", "name")
+    # Get all categories, ordered by display_order
+    categories = ElectionCategory.objects.all().order_by("display_order", "name")
 
     # Build tab data — ONLY live elections in tabs
     tab_data = []
@@ -727,23 +570,19 @@ def voter_dashboard(request, slug):
 
     # Past elections for results
     past_elections = Election.objects.filter(
-        organization=org,
         state__in=["CLOSED", "ARCHIVED"],
     ).order_by("-actual_closed_at")
 
     return render(request, "core/voter_dashboard.html", {
-        "organization": org,
         "voter": voter,
         "tab_data": tab_data,
         "past_elections": past_elections,
     })
 
 @login_required
-def state_register(request, slug):
+def state_register(request):
     """Register for a state association."""
-    org = get_object_or_404(Organization, slug=slug)
-
-    if not hasattr(request.user, "studentvoter") or request.user.studentvoter.organization != org:
+    if not hasattr(request.user, "studentvoter"):
         messages.error(request, "Access denied.")
         return redirect("home")
 
@@ -752,59 +591,53 @@ def state_register(request, slug):
     # Check if already registered for any state
     if voter.state_memberships.exists():
         messages.info(request, "You are already registered for a state association. Use the change page to update.")
-        return redirect("voter_dashboard", slug=slug)
+        return redirect("voter_dashboard")
 
     # Check if any state association election is live (locked)
     state_category = ElectionCategory.objects.filter(
-        organization=org, category_type="STATE_ASSOCIATION"
+        category_type="STATE_ASSOCIATION"
     ).first()
 
     if state_category:
         live_elections = Election.objects.filter(category=state_category, state="LIVE")
         if live_elections.exists():
             messages.error(request, "State association registration is locked because an election is currently live.")
-            return redirect("voter_dashboard", slug=slug)
+            return redirect("voter_dashboard")
 
     if request.method == "POST":
         state = request.POST.get("state")
         if not state:
             messages.error(request, "Please select your state of origin.")
         else:
-            from .models import StateAssociationMembership
             StateAssociationMembership.objects.create(voter=voter, state=state)
             messages.success(request, f"Successfully registered for {dict(StateAssociationMembership.NIGERIAN_STATES).get(state, state)} State Association.")
-            return redirect("voter_dashboard", slug=slug)
+            return redirect("voter_dashboard")
 
-    from .models import StateAssociationMembership
     return render(request, "core/state_register.html", {
-        "organization": org,
         "voter": voter,
         "states": StateAssociationMembership.NIGERIAN_STATES,
     })
 
 
 @login_required
-def state_change(request, slug):
+def state_change(request):
     """Change state association membership (only if no live election)."""
-    org = get_object_or_404(Organization, slug=slug)
-
-    if not hasattr(request.user, "studentvoter") or request.user.studentvoter.organization != org:
+    if not hasattr(request.user, "studentvoter"):
         messages.error(request, "Access denied.")
         return redirect("home")
 
     voter = request.user.studentvoter
-    from .models import StateAssociationMembership
 
     # Check if any state association election is live
     state_category = ElectionCategory.objects.filter(
-        organization=org, category_type="STATE_ASSOCIATION"
+        category_type="STATE_ASSOCIATION"
     ).first()
 
     if state_category:
         live_elections = Election.objects.filter(category=state_category, state="LIVE")
         if live_elections.exists():
             messages.error(request, "Cannot change state association while an election is live.")
-            return redirect("voter_dashboard", slug=slug)
+            return redirect("voter_dashboard")
 
     if request.method == "POST":
         new_state = request.POST.get("state")
@@ -815,23 +648,21 @@ def state_change(request, slug):
             voter.state_memberships.all().delete()
             StateAssociationMembership.objects.create(voter=voter, state=new_state)
             messages.success(request, f"State association updated to {dict(StateAssociationMembership.NIGERIAN_STATES).get(new_state, new_state)}.")
-            return redirect("voter_dashboard", slug=slug)
+            return redirect("voter_dashboard")
 
     current_membership = voter.state_memberships.first()
     return render(request, "core/state_change.html", {
-        "organization": org,
         "voter": voter,
         "states": StateAssociationMembership.NIGERIAN_STATES,
         "current_state": current_membership.state if current_membership else None,
     })
 
 @login_required
-def ballot_view(request, slug, election_id):
+def ballot_view(request, election_id):
     """Display the ballot for a live election."""
-    org = get_object_or_404(Organization, slug=slug)
-    election = get_object_or_404(Election, id=election_id, organization=org)
+    election = get_object_or_404(Election, id=election_id)
 
-    if not hasattr(request.user, "studentvoter") or request.user.studentvoter.organization != org:
+    if not hasattr(request.user, "studentvoter"):
         messages.error(request, "Access denied.")
         return redirect("home")
 
@@ -839,12 +670,12 @@ def ballot_view(request, slug, election_id):
 
     if election.state != "LIVE":
         messages.error(request, "This election is not currently open for voting.")
-        return redirect("voter_dashboard", slug=slug)
+        return redirect("voter_dashboard")
 
     # Check eligibility
     if not is_voter_eligible(voter, election):
         messages.error(request, "You are not eligible to vote in this election.")
-        return redirect("voter_dashboard", slug=slug)
+        return redirect("voter_dashboard")
 
     positions = election.positions.prefetch_related("candidates")
 
@@ -862,7 +693,6 @@ def ballot_view(request, slug, election_id):
         })
 
     return render(request, "core/ballot.html", {
-        "organization": org,
         "election": election,
         "ballot_data": ballot_data,
         "voter": voter,
@@ -871,13 +701,12 @@ def ballot_view(request, slug, election_id):
 
 @login_required
 @require_POST
-def cast_vote_view(request, slug, election_id, position_id):
+def cast_vote_view(request, election_id, position_id):
     """Handle vote casting."""
-    org = get_object_or_404(Organization, slug=slug)
-    election = get_object_or_404(Election, id=election_id, organization=org)
+    election = get_object_or_404(Election, id=election_id)
     position = get_object_or_404(Position, id=position_id, election=election)
 
-    if not hasattr(request.user, "studentvoter") or request.user.studentvoter.organization != org:
+    if not hasattr(request.user, "studentvoter"):
         return JsonResponse({"success": False, "message": "Access denied."})
 
     voter = request.user.studentvoter
@@ -915,15 +744,11 @@ def cast_vote_view(request, slug, election_id, position_id):
             })
         messages.error(request, message)
 
-    return redirect("ballot_view", slug=slug, election_id=election_id)
+    return redirect("ballot_view", election_id=election_id)
 
 
 def is_voter_eligible(voter, election):
     """Check if a voter is eligible for an election based on category and rules."""
-    # Must be in same organization
-    if voter.organization != election.organization:
-        return False
-
     # Must be activated
     if not voter.is_activated:
         return False
@@ -941,7 +766,6 @@ def is_voter_eligible(voter, election):
 
     elif category.category_type == "STATE_ASSOCIATION":
         # Must be registered for the state this election is for
-        from .models import StateAssociationMembership
         membership = StateAssociationMembership.objects.filter(
             voter=voter, state=category.name
         ).exists()
@@ -954,16 +778,16 @@ def is_voter_eligible(voter, election):
     # Fallback
     return False
 
-#@login_required
-def public_election_results(request, slug, election_id):
+
+@login_required
+def public_election_results(request, election_id):
     """Display election results (only when CLOSED or ARCHIVED)."""
-    org = get_object_or_404(Organization, slug=slug)
-    election = get_object_or_404(Election, id=election_id, organization=org)
+    election = get_object_or_404(Election, id=election_id)
 
     # Results are ONLY visible when CLOSED or ARCHIVED (Blueprint §8)
     if election.state not in ["CLOSED", "ARCHIVED"]:
         messages.error(request, "Results are not yet available for this election.")
-        return redirect("organization_landing", slug=slug)
+        return redirect("home")
 
     # Get tallies per position
     results = []
@@ -996,9 +820,7 @@ def public_election_results(request, slug, election_id):
         })
 
     # Get total eligible voters and turnout
-    total_eligible = StudentVoter.objects.filter(
-        organization=org, is_activated=True
-    ).count()
+    total_eligible = StudentVoter.objects.filter(is_activated=True).count()
 
     # Count unique voters who voted in this election
     voted_positions = set()
@@ -1012,7 +834,6 @@ def public_election_results(request, slug, election_id):
     turnout_percentage = (total_voters / total_eligible * 100) if total_eligible > 0 else 0
 
     return render(request, "core/election_results.html", {
-        "organization": org,
         "election": election,
         "results": results,
         "total_eligible": total_eligible,
@@ -1022,114 +843,39 @@ def public_election_results(request, slug, election_id):
 
 
 # ============================================================================
-# Organization Admin Dashboard
+# School Admin Dashboard
 # ============================================================================
 @login_required
 @org_admin_required
 def admin_dashboard(request):
-    """Organization Admin main dashboard."""
-    org = get_org_from_request(request)
-
-    elections = Election.objects.filter(organization=org).order_by("-created_at")
+    """School Admin main dashboard."""
+    elections = Election.objects.all().order_by("-created_at")
     live_elections = elections.filter(state="LIVE")
     closed_elections = elections.filter(state__in=["CLOSED", "ARCHIVED"])
-    total_voters = StudentVoter.objects.filter(organization=org, is_activated=True).count()
-    total_verified = VerifiedVoterRecord.objects.filter(organization=org).count()
+    total_voters = StudentVoter.objects.filter(is_activated=True).count()
+    total_verified = VerifiedVoterRecord.objects.count()
 
     # Recent audit logs
-    recent_logs = AuditLog.objects.filter(organization=org)[:20]
-
-    # SUBSCRIPTION LOCK [Blueprint §11.2] — view-only when expired.
-    # Dashboard remains fully viewable; only NEW-creation actions are blocked.
-    subscription_active = org.is_subscription_active()
-
+    recent_logs = AuditLog.objects.all()[:20]
 
     return render(request, "core/admin_dashboard.html", {
-        "organization": org,
         "elections": elections,
         "live_elections": live_elections,
         "closed_elections": closed_elections,
         "total_voters": total_voters,
         "total_verified": total_verified,
         "recent_logs": recent_logs,
-        "subscription_active": subscription_active,
     })
 
 
 @login_required
 @org_admin_required
-def export_organization_data(request):
-    """
-    Data export on subscription end [Blueprint §17].
-    Available at ALL times — an Organization never loses access to its
-    own historical records. Excludes raw individual Vote records
-    (anonymous by design) and excludes Platform-level or other
-    Organizations' data.
-    """
-    org = get_org_from_request(request)
-
-    export_data = {
-        "organization": {
-            "name": org.name,
-            "slug": org.slug,
-            "exported_at": timezone.now().isoformat(),
-        },
-        "elections": [],
-    }
-
-    elections = Election.objects.filter(organization=org)
-    for election in elections:
-        election_data = {
-            "title": election.title,
-            "state": election.state,
-            "voting_opens_at": str(election.voting_opens_at),
-            "voting_closes_at": str(election.voting_closes_at),
-            "final_tally_hash": election.final_tally_hash,
-            "results_published_at": str(election.results_published_at),
-            "positions": [],
-        }
-        for position in election.positions.all():
-            position_data = {
-                "name": position.name,
-                "candidates": [],
-            }
-            for candidate in position.candidates.all():
-                # Vote COUNT only — never linked to any individual voter
-                vote_count = candidate.votes.count()
-                position_data["candidates"].append({
-                    "name": candidate.name,
-                    "status": candidate.status,
-                    "vote_count": vote_count,
-                })
-            election_data["positions"].append(position_data)
-        export_data["elections"].append(election_data)
-
-    log_action(
-        organization=org,
-        action_type="DATA_EXPORT",
-        description=f"Organization data exported by {request.user.email}",
-        actor=request.user.email,
-    )
-
-    response = JsonResponse(export_data, json_dumps_params={"indent": 2})
-    response["Content-Disposition"] = f'attachment; filename="{org.slug}_export_{timezone.now().date()}.json"'
-    return response
-
-@login_required
-@org_admin_required
 def category_create(request):
     """Create a new election category (Faculty, State Association, SUG)."""
-    org = get_org_from_request(request)
-
-    if not org.is_subscription_active():
-        messages.error(request, "Subscription expired. Cannot create categories.")
-        return redirect("admin_dashboard")
-
     if request.method == "POST":
         form = ElectionCategoryForm(request.POST)
         if form.is_valid():
             category = form.save(commit=False)
-            category.organization = org
             # Auto-generate slug from name
             if not category.slug:
                 base_slug = category.name.lower().replace(" ", "-")
@@ -1143,7 +889,6 @@ def category_create(request):
             category.save()
 
             log_action(
-                organization=org,
                 action_type="CATEGORY_CREATED",
                 description=f"Election category '{category.name}' created",
                 actor=request.user.email,
@@ -1154,39 +899,18 @@ def category_create(request):
     else:
         form = ElectionCategoryForm()
 
-    return render(request, "core/admin_category_form.html", {
-        "form": form,
-        "organization": org,
-    })
+    return render(request, "core/admin_category_form.html", {"form": form})
+
 
 @login_required
 @org_admin_required
 def election_create(request):
     """Create a new election."""
-    org = get_org_from_request(request)
-
-    # SUBSCRIPTION ENFORCEMENT [Blueprint §11.2]
-    # Block NEW elections when subscription has expired.
-    # LIVE elections are NEVER interrupted by subscription status.
-    if not org.is_subscription_active():
-        messages.error(
-            request,
-            "Your organization's subscription has expired. "
-            "New elections cannot be created until renewal. "
-            "Existing live elections continue running normally."
-        )
-        return redirect("admin_dashboard")
-
     if request.method == "POST":
         form = ElectionForm(request.POST)
         if form.is_valid():
-            election = form.save(commit=False)
-            election.organization = org
-            # Organization is derived from category, but we keep it explicit for queries
-            election.save()
-
+            election = form.save()
             log_action(
-                organization=org,
                 action_type="ELECTION_CREATED",
                 description=f"Election '{election.title}' created",
                 actor=request.user.email,
@@ -1200,7 +924,6 @@ def election_create(request):
 
     return render(request, "core/admin_election_form.html", {
         "form": form,
-        "organization": org,
         "action": "Create",
     })
 
@@ -1209,12 +932,10 @@ def election_create(request):
 @org_admin_required
 def election_detail(request, election_id):
     """View and manage a specific election."""
-    org = get_org_from_request(request)
-    election = get_object_or_404(Election, id=election_id, organization=org)
+    election = get_object_or_404(Election, id=election_id)
     positions = election.positions.prefetch_related("candidates")
 
     return render(request, "core/admin_election_detail.html", {
-        "organization": org,
         "election": election,
         "positions": positions,
     })
@@ -1224,8 +945,7 @@ def election_detail(request, election_id):
 @org_admin_required
 def election_transition(request, election_id):
     """Transition election state (DRAFT→LIVE, LIVE→CLOSED)."""
-    org = get_org_from_request(request)
-    election = get_object_or_404(Election, id=election_id, organization=org)
+    election = get_object_or_404(Election, id=election_id)
 
     if request.method == "POST":
         new_state = request.POST.get("new_state")
@@ -1249,13 +969,7 @@ def election_transition(request, election_id):
 @org_admin_required
 def position_create(request, election_id):
     """Add a position to an election."""
-    org = get_org_from_request(request)
-    election = get_object_or_404(Election, id=election_id, organization=org)
-
-    # SUBSCRIPTION ENFORCEMENT [Blueprint §11.2]
-    if not org.is_subscription_active():
-        messages.error(request, "Subscription expired. Cannot modify election configuration.")
-        return redirect("admin_election_detail", election_id=election_id)
+    election = get_object_or_404(Election, id=election_id)
 
     if request.method == "POST":
         form = PositionForm(request.POST)
@@ -1270,7 +984,6 @@ def position_create(request, election_id):
 
     return render(request, "core/admin_position_form.html", {
         "form": form,
-        "organization": org,
         "election": election,
     })
 
@@ -1279,13 +992,7 @@ def position_create(request, election_id):
 @org_admin_required
 def candidate_create(request, position_id):
     """Add a candidate to a position."""
-    org = get_org_from_request(request)
-    position = get_object_or_404(Position, id=position_id, election__organization=org)
-
-    # SUBSCRIPTION ENFORCEMENT [Blueprint §11.2]
-    if not org.is_subscription_active():
-        messages.error(request, "Subscription expired. Cannot add candidates.")
-        return redirect("admin_election_detail", election_id=position.election.id)
+    position = get_object_or_404(Position, id=position_id)
 
     if request.method == "POST":
         form = CandidateForm(request.POST, request.FILES)
@@ -1300,7 +1007,6 @@ def candidate_create(request, position_id):
 
     return render(request, "core/admin_candidate_form.html", {
         "form": form,
-        "organization": org,
         "position": position,
     })
 
@@ -1309,10 +1015,7 @@ def candidate_create(request, position_id):
 @org_admin_required
 def candidate_screen(request, candidate_id):
     """Screen (approve/reject/withdraw) a candidate."""
-    org = get_org_from_request(request)
-    candidate = get_object_or_404(
-        Candidate, id=candidate_id, position__election__organization=org
-    )
+    candidate = get_object_or_404(Candidate, id=candidate_id)
 
     if request.method == "POST":
         form = CandidateStatusForm(request.POST, instance=candidate)
@@ -1321,7 +1024,6 @@ def candidate_screen(request, candidate_id):
             candidate = form.save()
 
             log_action(
-                organization=org,
                 action_type=f"CANDIDATE_{candidate.status}",
                 description=f"Candidate '{candidate.name}' {candidate.status.lower()} by {request.user.email}",
                 actor=request.user.email,
@@ -1340,7 +1042,6 @@ def candidate_screen(request, candidate_id):
 
     return render(request, "core/admin_candidate_screen.html", {
         "form": form,
-        "organization": org,
         "candidate": candidate,
     })
 
@@ -1348,10 +1049,7 @@ def candidate_screen(request, candidate_id):
 @org_admin_required
 def candidate_delete(request, candidate_id):
     """Delete a candidate. Only allowed if election is not LIVE."""
-    org = get_org_from_request(request)
-    candidate = get_object_or_404(
-        Candidate, id=candidate_id, position__election__organization=org
-    )
+    candidate = get_object_or_404(Candidate, id=candidate_id)
 
     election = candidate.position.election
 
@@ -1364,7 +1062,6 @@ def candidate_delete(request, candidate_id):
         candidate.delete()
 
         log_action(
-            organization=org,
             action_type="CANDIDATE_DELETED",
             description=f"Candidate '{candidate_name}' deleted by {request.user.email}",
             actor=request.user.email,
@@ -1375,7 +1072,6 @@ def candidate_delete(request, candidate_id):
         return redirect("admin_election_detail", election_id=election.id)
 
     return render(request, "core/admin_candidate_delete.html", {
-        "organization": org,
         "candidate": candidate,
         "election": election,
     })
@@ -1384,8 +1080,6 @@ def candidate_delete(request, candidate_id):
 @org_admin_required
 def voter_import(request):
     """Import verified voter records from CSV."""
-    org = get_org_from_request(request)
-
     if request.method == "POST":
         form = CSVImportForm(request.POST, request.FILES)
         if form.is_valid():
@@ -1413,7 +1107,6 @@ def voter_import(request):
                         continue
 
                     VerifiedVoterRecord.objects.update_or_create(
-                        organization=org,
                         matric_number=matric,
                         defaults={
                             "official_email": email,
@@ -1431,7 +1124,6 @@ def voter_import(request):
                     errors.append(f"Row error: {str(e)}")
 
             log_action(
-                organization=org,
                 action_type="CSV_IMPORT",
                 description=f"CSV import: {success_count} succeeded, {error_count} failed",
                 actor=request.user.email,
@@ -1447,18 +1139,14 @@ def voter_import(request):
     else:
         form = CSVImportForm()
 
-    return render(request, "core/admin_voter_import.html", {
-        "form": form,
-        "organization": org,
-    })
+    return render(request, "core/admin_voter_import.html", {"form": form})
 
 
 @login_required
 @org_admin_required
 def admin_results(request, election_id):
     """View results for a closed election (same data as public, but admin access)."""
-    org = get_org_from_request(request)
-    election = get_object_or_404(Election, id=election_id, organization=org)
+    election = get_object_or_404(Election, id=election_id)
 
     if election.state not in ["CLOSED", "ARCHIVED"]:
         messages.error(request, "Results are only available after the election is closed.")
@@ -1491,7 +1179,6 @@ def admin_results(request, election_id):
         })
 
     return render(request, "core/admin_results.html", {
-        "organization": org,
         "election": election,
         "results": results,
     })
@@ -1500,8 +1187,7 @@ def admin_results(request, election_id):
 @org_admin_required
 def admin_election_results_export(request, election_id):
     """Export a single election's results as CSV."""
-    org = get_org_from_request(request)
-    election = get_object_or_404(Election, id=election_id, organization=org)
+    election = get_object_or_404(Election, id=election_id)
 
     if election.state not in ["CLOSED", "ARCHIVED"]:
         messages.error(request, "Results are only available for closed or archived elections.")
@@ -1533,7 +1219,6 @@ def admin_election_results_export(request, election_id):
 
     # Log the export
     log_action(
-        organization=org,
         action_type="ELECTION_RESULTS_EXPORTED",
         description=f"Results exported for '{election.title}' by {request.user.email}",
         actor=request.user.email,
@@ -1545,58 +1230,55 @@ def admin_election_results_export(request, election_id):
 @login_required
 @org_admin_required
 def admin_audit_log(request):
-    """View and filter audit log for the organization."""
-    org = get_org_from_request(request)
-    
-    logs = AuditLog.objects.filter(organization=org).select_related("election")
-    
+    """View and filter audit log."""
+    logs = AuditLog.objects.select_related("election")
+
     # Get elections for the filter dropdown
-    elections = Election.objects.filter(organization=org).order_by("-created_at")
-    
+    elections = Election.objects.all().order_by("-created_at")
+
     # Apply filters
     actor_search = request.GET.get("actor", "").strip()
     actor_type = request.GET.get("actor_type", "")
     election_filter = request.GET.get("election", "")
     date_from = request.GET.get("date_from", "")
     date_to = request.GET.get("date_to", "")
-    
+
     if actor_search:
         logs = logs.filter(actor__icontains=actor_search)
-    
+
     if actor_type == "SYSTEM":
         logs = logs.filter(actor="SYSTEM")
     elif actor_type == "ADMIN":
         logs = logs.exclude(actor="SYSTEM")
-    
+
     if election_filter:
         try:
             election_id = int(election_filter)
             logs = logs.filter(election_id=election_id)
         except (ValueError, TypeError):
             pass
-    
+
     if date_from:
         try:
             logs = logs.filter(timestamp__date__gte=datetime.strptime(date_from, "%Y-%m-%d").date())
         except (ValueError, TypeError):
             pass
-    
+
     if date_to:
         try:
             logs = logs.filter(timestamp__date__lte=datetime.strptime(date_to, "%Y-%m-%d").date())
         except (ValueError, TypeError):
             pass
-    
+
     logs = logs[:500]  # Limit to prevent huge page loads
-    
+
     # Build query string for preserving filters
     query_params = request.GET.copy()
     if "export" in query_params:
         del query_params["export"]
     query_string = query_params.urlencode()
-    
+
     return render(request, "core/admin_audit_log.html", {
-        "organization": org,
         "logs": logs,
         "elections": elections,
         "query_string": query_string,
@@ -1614,51 +1296,49 @@ def admin_audit_log(request):
 @org_admin_required
 def admin_audit_log_export(request):
     """Export filtered audit log as CSV."""
-    org = get_org_from_request(request)
-    
-    logs = AuditLog.objects.filter(organization=org).select_related("election")
-    
+    logs = AuditLog.objects.select_related("election")
+
     # Apply same filters as the main view
     actor_search = request.GET.get("actor", "").strip()
     actor_type = request.GET.get("actor_type", "")
     election_filter = request.GET.get("election", "")
     date_from = request.GET.get("date_from", "")
     date_to = request.GET.get("date_to", "")
-    
+
     if actor_search:
         logs = logs.filter(actor__icontains=actor_search)
-    
+
     if actor_type == "SYSTEM":
         logs = logs.filter(actor="SYSTEM")
     elif actor_type == "ADMIN":
         logs = logs.exclude(actor="SYSTEM")
-    
+
     if election_filter:
         try:
             election_id = int(election_filter)
             logs = logs.filter(election_id=election_id)
         except (ValueError, TypeError):
             pass
-    
+
     if date_from:
         try:
             logs = logs.filter(timestamp__date__gte=datetime.strptime(date_from, "%Y-%m-%d").date())
         except (ValueError, TypeError):
             pass
-    
+
     if date_to:
         try:
             logs = logs.filter(timestamp__date__lte=datetime.strptime(date_to, "%Y-%m-%d").date())
         except (ValueError, TypeError):
             pass
-    
+
     # Generate CSV
     response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = f'attachment; filename="audit_log_{org.slug}_{timezone.now().date()}.csv"'
-    
+    response['Content-Disposition'] = f'attachment; filename="audit_log_{timezone.now().date()}.csv"'
+
     writer = csv.writer(response)
     writer.writerow(['Timestamp', 'Action', 'Election', 'Actor', 'Description'])
-    
+
     for log in logs:
         writer.writerow([
             log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
@@ -1667,15 +1347,14 @@ def admin_audit_log_export(request):
             log.actor,
             log.description,
         ])
-    
+
     # Log the export action
     log_action(
-        organization=org,
         action_type="AUDIT_LOG_EXPORTED",
         description=f"Audit log exported by {request.user.email}",
         actor=request.user.email,
     )
-    
+
     return response
 
 
@@ -1686,7 +1365,6 @@ def admin_audit_log_export(request):
 @election_officer_required
 def observer_dashboard(request):
     """Election Observer dashboard: live turnout, system status, audit feed."""
-    org = get_org_from_request(request)
     officer = request.user.electionofficer
 
     # Get assigned election — NO fallback to other elections
@@ -1694,16 +1372,13 @@ def observer_dashboard(request):
 
     if not election:
         return render(request, "core/observer_dashboard.html", {
-            "organization": org,
             "election": None,
             "no_election": False,
             "no_assignment": True,
         })
 
     # LIVE TURNOUT: X of Y eligible voters have cast a ballot
-    total_eligible = StudentVoter.objects.filter(
-        organization=org, is_activated=True
-    ).count()
+    total_eligible = StudentVoter.objects.filter(is_activated=True).count()
 
     # Count unique voters who voted in at least one position in this election
     voted_voter_ids = set()
@@ -1716,7 +1391,7 @@ def observer_dashboard(request):
 
     # Real-time audit log feed (last 50 actions)
     audit_feed = AuditLog.objects.filter(
-        organization=org, election=election
+        election=election
     ).select_related("election")[:50]
 
     # System status
@@ -1731,7 +1406,6 @@ def observer_dashboard(request):
     results_available = election.state in ["CLOSED", "ARCHIVED"]
 
     return render(request, "core/observer_dashboard.html", {
-        "organization": org,
         "election": election,
         "turnout_count": turnout_count,
         "total_eligible": total_eligible,
@@ -1741,76 +1415,4 @@ def observer_dashboard(request):
         "results_available": results_available,
         "no_election": False,
         "no_assignment": False,
-    })
-
-# ============================================================================
-# Platform Owner Views
-# ============================================================================
-@login_required
-@platform_owner_required
-def platform_dashboard(request):
-    """Platform Owner dashboard: all organizations, subscriptions, onboarding."""
-    organizations = Organization.objects.all().order_by("name")
-
-    stats = {
-        "total_orgs": organizations.count(),
-        "active_orgs": organizations.filter(subscription_status="ACTIVE").count(),
-        "expired_orgs": organizations.filter(subscription_status="EXPIRED").count(),
-        "total_elections": Election.objects.count(),
-        "live_elections": Election.objects.filter(state="LIVE").count(),
-    }
-
-    return render(request, "core/platform_dashboard.html", {
-        "organizations": organizations,
-        "stats": stats,
-    })
-
-
-@login_required
-@platform_owner_required
-def organization_onboard(request):
-    """Onboard a new organization."""
-    if request.method == "POST":
-        form = OrganizationForm(request.POST, request.FILES)
-        if form.is_valid():
-            org = form.save()
-
-            # Create the 3 admin accounts
-            admin_emails = [
-                request.POST.get("admin1_email"),
-                request.POST.get("admin2_email"),
-                request.POST.get("admin3_email"),
-            ]
-            primary_admin = request.POST.get("primary_admin")
-
-            for i, email in enumerate(admin_emails):
-                if email:
-                    user, created = User.objects.get_or_create(
-                        email=email,
-                        defaults={
-                            "username": email.split("@")[0],
-                            "user_type": "ORG_ADMIN",
-                        }
-                    )
-                    OrganizationAdmin.objects.create(
-                        organization=org,
-                        user=user,
-                        is_primary=(email == primary_admin),
-                    )
-
-            log_action(
-                organization=org,
-                action_type="ORGANIZATION_ONBOARDED",
-                description=f"Organization '{org.name}' onboarded",
-                actor=request.user.email,
-            )
-
-            messages.success(request, f"Organization '{org.name}' onboarded successfully.")
-            return redirect("platform_dashboard")
-    else:
-        form = OrganizationForm()
-
-    return render(request, "core/platform_organization_form.html", {
-        "form": form,
-        "action": "Onboard",
     })

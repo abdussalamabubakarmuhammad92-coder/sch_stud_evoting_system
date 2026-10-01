@@ -7,7 +7,6 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth import authenticate
 
 from .models import (
-    Organization,
     ElectionCategory,
     Election,
     Position,
@@ -25,10 +24,6 @@ class VoterLoginForm(forms.Form):
     matric_number = forms.CharField(max_length=30, label="Matric Number")
     password = forms.CharField(widget=forms.PasswordInput, label="Password")
 
-    def __init__(self, *args, organization=None, **kwargs):
-        self.organization = organization
-        super().__init__(*args, **kwargs)
-
 
 class AdminLoginForm(AuthenticationForm):
     """Standard email + password login for admins/officers."""
@@ -37,7 +32,7 @@ class AdminLoginForm(AuthenticationForm):
     def confirm_login_allowed(self, user):
         if not user.is_active:
             raise ValidationError("This account is inactive.", code="inactive")
-        if user.user_type not in ["PLATFORM_OWNER", "ORG_ADMIN", "ELECTION_OFFICER"]:
+        if user.user_type not in ["ADMIN", "ELECTION_OFFICER"]:
             raise ValidationError(
                 "This login portal is for administrators only.",
                 code="invalid_login",
@@ -56,20 +51,13 @@ class VoterRegistrationForm(forms.Form):
     email = forms.EmailField(label="Email Address")
     phone_number = forms.CharField(max_length=20, label="Phone Number")
 
-    def __init__(self, *args, organization=None, **kwargs):
-        self.organization = organization
-        super().__init__(*args, **kwargs)
-
     def clean_matric_number(self):
         matric = self.cleaned_data["matric_number"].strip().upper()
-
-        if not self.organization:
-            raise ValidationError("Organization context is missing.")
 
         # Check if matric exists in verified records
         try:
             self.verified_record = VerifiedVoterRecord.objects.get(
-                organization=self.organization, matric_number=matric
+                matric_number=matric
             )
         except VerifiedVoterRecord.DoesNotExist:
             raise ValidationError(
@@ -77,9 +65,7 @@ class VoterRegistrationForm(forms.Form):
             )
 
         # Check if already registered
-        if StudentVoter.objects.filter(
-            organization=self.organization, matric_number=matric
-        ).exists():
+        if StudentVoter.objects.filter(matric_number=matric).exists():
             raise ValidationError(
                 "This matric number is already registered. Please log in instead."
             )
@@ -107,7 +93,7 @@ class VoterRegistrationForm(forms.Form):
                 )
         else:
             # Email becomes mandatory strict-match
-            if email != vvr.official_email:
+            if vvr.official_email and email != vvr.official_email:
                 raise ValidationError(
                     "Email does not match the official record on file. "
                     "Please use the email registered with your school."
@@ -153,22 +139,10 @@ class PasswordResetRequestForm(forms.Form):
     """Request password reset via matric number."""
     matric_number = forms.CharField(max_length=30, label="Matric Number")
 
-    def __init__(self, *args, organization=None, **kwargs):
-        self.organization = organization
-        super().__init__(*args, **kwargs)
-
 
 # ============================================================================
-# Organization Admin Forms
+# Election Administration Forms
 # ============================================================================
-class OrganizationForm(forms.ModelForm):
-    class Meta:
-        model = Organization
-        fields = ["name", "slug", "logo", "subscription_status", "subscription_expires_at", "primary_admin_contact"]
-        widgets = {
-            "subscription_expires_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
-        }
-
 class ElectionCategoryForm(forms.ModelForm):
     slug = forms.CharField(
         widget=forms.TextInput(attrs={'readonly': True}),

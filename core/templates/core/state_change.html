@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Change State Association — {{ organization.name }}{% endblock %}
+{% block title %}Change State Association — {{ school_name }}{% endblock %}
 {% block content %}
 <h1>Change State Association</h1>
 <p style="color: #666; margin-bottom: 25px;">Update your state of origin membership.</p>
@@ -28,7 +28,7 @@
         </p>
         
         <button type="submit" class="btn">Update State</button>
-        <a href="{% url 'voter_dashboard' organization.slug %}" class="btn" style="background: #666;">Cancel</a>
+        <a href="{% url 'voter_dashboard' %}" class="btn" style="background: #666;">Cancel</a>
     </form>
 </div>
 

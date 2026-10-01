@@ -1,23 +1,43 @@
 {% extends "base.html" %}
-{% block title %}E-Voting Platform{% endblock %}
+{% block title %}{{ school_name }}{% endblock %}
 {% block content %}
 <div class="card text-center" style="padding: 60px 20px;">
-    <h1 style="font-size: 2.5em; margin-bottom: 15px;">E-Voting Platform</h1>
+    <h1 style="font-size: 2.5em; margin-bottom: 15px;">{{ school_name }}</h1>
     <p style="font-size: 1.2em; color: #666; margin-bottom: 30px;">
-        Secure, transparent, and anonymous digital elections for Educational Institutions.
+        Secure, transparent, and anonymous digital elections.
     </p>
+    <a href="{% url 'voter_login' %}" class="btn" style="margin-right: 10px;">Student Login</a>
+    <a href="{% url 'voter_register_step1' %}" class="btn" style="margin-right: 10px;">Student Registration</a>
+    <a href="{% url 'admin_login' %}" class="btn" style="background: #555;">Admin Login</a>
 </div>
 
-<h2 style="margin: 30px 0 20px;">Participating Institutions</h2>
+{% if live_elections %}
+<h2 style="margin: 30px 0 20px;">Voting Open Now</h2>
 <div class="grid">
-    {% for org in organizations %}
+    {% for election in live_elections %}
     <div class="card">
-        <h3>{{ org.name }}</h3>
-        <p style="color: #666; margin: 10px 0;">Status: <span class="status-badge status-{{ org.subscription_status }}">{{ org.subscription_status }}</span></p>
-        <a href="{% url 'organization_landing' org.slug %}" class="btn">Visit Portal</a>
+        <h3>{{ election.title }}</h3>
+        <p style="color: #666; margin: 10px 0;">
+            {{ election.category.name }} — closes {{ election.voting_closes_at|date:"M d, Y H:i" }}
+        </p>
+        <span class="status-badge status-LIVE">LIVE</span>
     </div>
-    {% empty %}
-    <p>No organizations are currently subscribed.</p>
     {% endfor %}
 </div>
+{% endif %}
+
+{% if past_elections %}
+<h2 style="margin: 30px 0 20px;">Recent Results</h2>
+<div class="grid">
+    {% for election in past_elections %}
+    <div class="card">
+        <h3>{{ election.title }}</h3>
+        <p style="color: #666; margin: 10px 0;">
+            {{ election.category.name }} — closed {{ election.actual_closed_at|date:"M d, Y H:i" }}
+        </p>
+        <a href="{% url 'election_results' election.id %}" class="btn">View Results</a>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
 {% endblock %}

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Voter Dashboard — {{ organization.name }}{% endblock %}
+{% block title %}Voter Dashboard — {{ school_name }}{% endblock %}
 {% block content %}
-<h1>{{ organization.name }} — Elections</h1>
+<h1>{{ school_name }} — Elections</h1>
 <p style="color: #666; margin-bottom: 25px;">Welcome, {{ voter.matric_number }}
     {% if not voter.state_memberships.exists %}
-        <a href="{% url 'state_register' organization.slug %}" class="btn" style="background: #dd6b20; font-size: 0.85em; margin-left: 10px;">Register State Association</a>
+        <a href="{% url 'state_register' %}" class="btn" style="background: #dd6b20; font-size: 0.85em; margin-left: 10px;">Register State Association</a>
     {% else %}
-        <a href="{% url 'state_change' organization.slug %}" class="btn" style="background: #666; font-size: 0.85em; margin-left: 10px;">Change State</a>
+        <a href="{% url 'state_change' %}" class="btn" style="background: #666; font-size: 0.85em; margin-left: 10px;">Change State</a>
     {% endif %}
 </p>
 
@@ -65,7 +65,7 @@
                 </p>
             </div>
             {% if election.election.state == "LIVE" %}
-                <a href="{% url 'ballot_view' organization.slug election.election.id %}" class="btn btn-success">
+                <a href="{% url 'ballot_view' election.election.id %}" class="btn btn-success">
                     {% if election.all_voted %}📋 View Ballot{% else %}Vote Now{% endif %}
                 </a>
             {% endif %}
@@ -106,7 +106,7 @@
                     {% endif %}
                 </p>
             </div>
-            <a href="{% url 'election_results' organization.slug election.id %}" class="btn">View Results</a>
+            <a href="{% url 'election_results' election.id %}" class="btn">View Results</a>
         </div>
         {% endfor %}
     </div>

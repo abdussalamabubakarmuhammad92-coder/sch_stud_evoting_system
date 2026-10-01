@@ -1,16 +1,14 @@
 # Data Model
 
-## Organization
 
-Tenant boundary for elections, voters, administrators, and audit records.
 
 ## User
 
-Django custom user model. Role-specific relationships determine organization-admin, election-officer, voter, and platform-owner behavior.
+Django custom user model. Role-specific relationships determine school-admin, election-officer, and voter behavior.
 
 ## Election
 
-Belongs to an organization and category. Contains state, eligibility configuration, timing, and final tally integrity metadata.
+Belongs to a category. Contains state, eligibility configuration, timing, and final tally integrity metadata.
 
 ## Position
 
@@ -38,4 +36,4 @@ Hashed, expiring verification codes with usage and failed-attempt state.
 
 ## AuditLog
 
-Organization-scoped security and administrative event record.
+Security and administrative event record for the school.

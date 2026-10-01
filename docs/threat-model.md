@@ -15,15 +15,15 @@
 
 ### Unauthorized voting
 
-Controls include authenticated voter sessions, organization scoping, election-state checks, eligibility checks, approved-candidate checks, and one-vote-per-position enforcement.
+Controls include authenticated voter sessions, election-state checks, eligibility checks, approved-candidate checks, and one-vote-per-position enforcement.
 
 ### Duplicate or concurrent voting
 
 The voter participation relation is checked inside a transaction while the voter row is locked on PostgreSQL. Tests cover sequential duplicate attempts and concurrent attempts.
 
-### Cross-organization access
+### Unauthorized election access
 
-Views resolve the requested organization and verify that the authenticated voter belongs to it. The vote utility also performs a defense-in-depth organization check.
+Views verify that the authenticated voter is eligible for the requested election (category-based rules), and the vote utility re-validates election state inside the transaction.
 
 ### Credential attacks
 
@@ -31,7 +31,7 @@ Django password hashing, OTP expiry, failed-attempt limits, and new-device verif
 
 ### Administrative privilege abuse
 
-Separate role decorators and organization relationships are used for platform-owner, organization-admin, and election-officer workflows. Audit logs record many privileged operations.
+Separate role decorators are used for school-admin and election-officer workflows. Audit logs record many privileged operations.
 
 ### Information leakage
 

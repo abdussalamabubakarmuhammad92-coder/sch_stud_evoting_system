@@ -33,12 +33,15 @@ def create_otp_verification(voter, purpose):
 
     # Determine delivery method based on strict-match rule
     # Phone is primary anchor; email is fallback
+    delivery_method = "EMAIL"
     try:
-        vvr = voter.organization.verified_voters.get(matric_number=voter.matric_number)
-        if vvr.official_phone:
+        from .models import VerifiedVoterRecord
+
+        vvr = VerifiedVoterRecord.objects.filter(
+            matric_number=voter.matric_number
+        ).first()
+        if vvr and vvr.official_phone:
             delivery_method = "SMS"
-        else:
-            delivery_method = "EMAIL"
     except Exception:
         # Fallback to email if no verified record found (shouldn't happen in normal flow)
         delivery_method = "EMAIL"
@@ -125,10 +128,14 @@ def send_otp(voter, otp_code, purpose):
     Send OTP to voter via the appropriate channel.
     Returns True if at least one channel succeeded.
     """
-    # Determine delivery method from the latest OTP record
+    # Determine delivery method from the verified record
     try:
-        vvr = voter.organization.verified_voters.get(matric_number=voter.matric_number)
-        if vvr.official_phone:
+        from .models import VerifiedVoterRecord
+
+        vvr = VerifiedVoterRecord.objects.filter(
+            matric_number=voter.matric_number
+        ).first()
+        if vvr and vvr.official_phone:
             # Phone is primary — send SMS
             sms_sent = send_sms(voter.phone_number, f"Your SUG E-Voting code: {otp_code}. Expires in 10 mins.")
             # Also send email as backup if we have it
@@ -147,11 +154,10 @@ def send_otp(voter, otp_code, purpose):
 # ============================================================================
 # Audit Logging
 # ============================================================================
-def log_action(organization, action_type, description, actor="SYSTEM", election=None, metadata=None):
+def log_action(action_type, description, actor="SYSTEM", election=None, metadata=None):
     """Create an audit log entry."""
     try:
         AuditLog.objects.create(
-            organization=organization,
             election=election,
             action_type=action_type,
             description=description,
@@ -225,7 +231,6 @@ def transition_election_state(election, new_state, actor="SYSTEM"):
         election.save()
 
         log_action(
-            organization=election.organization,
             action_type="ELECTION_STATE_CHANGE",
             description=f"Election '{election.title}' transitioned from {old_state} to {new_state}",
             actor=actor,
@@ -254,8 +259,6 @@ def cast_vote(voter, position, candidate):
         return False, "Candidate does not belong to this position."
 
     election = position.election
-    if voter.organization_id != election.organization_id:
-        return False, "Voter is not a member of this election's organization."
 
     if election.state != "LIVE":
         return False, "This election is not currently open for voting."
@@ -275,7 +278,6 @@ def cast_vote(voter, position, candidate):
         locked_voter.voted_positions.add(position)
 
         log_action(
-            organization=election.organization,
             action_type="VOTE_CAST",
             description=f"Vote cast for position: {position.name}",
             actor="SYSTEM",

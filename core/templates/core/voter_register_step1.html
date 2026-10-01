@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Register — {{ organization.name }}{% endblock %}
+{% block title %}Register — {{ school_name }}{% endblock %}
 {% block content %}
 <div class="card" style="max-width: 500px; margin: 0 auto;">
     <h2>Voter Registration</h2>
-    <p style="color: #666; margin-bottom: 20px;">Step 1 of 3 — {{ organization.name }}</p>
+    <p style="color: #666; margin-bottom: 20px;">Step 1 of 3 — {{ school_name }}</p>
 
     <div class="alert alert-info" style="font-size: 0.9em;">
         Enter your details exactly as registered with your school's ICT department.
@@ -27,7 +27,7 @@
     </form>
 
     <p style="margin-top: 20px; text-align: center;">
-        Already registered? <a href="{% url 'voter_login' organization.slug %}">Log in</a>
+        Already registered? <a href="{% url 'voter_login' %}">Log in</a>
     </p>
 </div>
 {% endblock %}

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Voter Login — {{ organization.name }}{% endblock %}
+{% block title %}Voter Login — {{ school_name }}{% endblock %}
 {% block content %}
 <div class="card" style="max-width: 500px; margin: 0 auto;">
     <h2>Voter Login</h2>
-    <p style="color: #666; margin-bottom: 20px;">{{ organization.name }}</p>
+    <p style="color: #666; margin-bottom: 20px;">{{ school_name }}</p>
 
     <form method="post">
         {% csrf_token %}
@@ -19,8 +19,8 @@
     </form>
 
     <p style="margin-top: 20px; text-align: center;">
-        <a href="{% url 'voter_register_step1' organization.slug %}">Register</a> | 
-        <a href="{% url 'password_reset_request' organization.slug %}">Forgot Password?</a>
+        <a href="{% url 'voter_register_step1' %}">Register</a> | 
+        <a href="{% url 'password_reset_request' %}">Forgot Password?</a>
     </p>
 </div>
 {% endblock %}

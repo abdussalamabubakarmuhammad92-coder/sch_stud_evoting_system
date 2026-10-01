@@ -27,7 +27,6 @@ def log_candidate_status_change(sender, instance, created, **kwargs):
     """Log candidate approvals, rejections, and withdrawals."""
     if created:
         log_action(
-            organization=instance.position.election.organization,
             action_type="CANDIDATE_CREATED",
             description=f"Candidate '{instance.name}' created for position '{instance.position.name}'",
             actor="SYSTEM",
@@ -42,7 +41,6 @@ def log_candidate_status_change(sender, instance, created, **kwargs):
         }
         action_type = action_map.get(instance.status, "CANDIDATE_STATUS_CHANGED")
         log_action(
-            organization=instance.position.election.organization,
             action_type=action_type,
             description=f"Candidate '{instance.name}' status changed to {instance.status}",
             actor="SYSTEM",

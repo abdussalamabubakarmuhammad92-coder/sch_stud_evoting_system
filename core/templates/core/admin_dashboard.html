@@ -1,15 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Admin Dashboard — {{ organization.name }}{% endblock %}
+{% block title %}Admin Dashboard — {{ school_name }}{% endblock %}
 {% block content %}
-<h1>{{ organization.name }} — Admin Dashboard</h1>
-
-{% if not subscription_active %}
-<div class="alert alert-warning">
-    <strong>Subscription Expired.</strong> You can still view all existing data,
-    but creating new elections is disabled until renewal. Existing live
-    elections continue running normally.
-</div>
-{% endif %}
+<h1>{{ school_name }} — Admin Dashboard</h1>
 
 <div class="grid" style="margin: 25px 0;">
     <div class="card text-center">
@@ -27,13 +19,10 @@
 </div>
 
 <div style="margin-bottom: 20px;">
-    {% if subscription_active %}
-        <a href="{% url 'category_create' %}" class="btn" style="background: #805ad5;">+ New Category</a>
-        <a href="{% url 'election_create' %}" class="btn">+ New Election</a>
-        <a href="{% url 'voter_import' %}" class="btn">Import Voters (CSV)</a>
-    {% endif %}
+    <a href="{% url 'category_create' %}" class="btn" style="background: #805ad5;">+ New Category</a>
+    <a href="{% url 'election_create' %}" class="btn">+ New Election</a>
+    <a href="{% url 'voter_import' %}" class="btn">Import Voters (CSV)</a>
     <a href="{% url 'admin_audit_log' %}" class="btn">Audit Log</a>
-    <a href="{% url 'export_organization_data' %}" class="btn" style="background: #555;">Export Your Data</a>
 </div>
 
 <h2>Live Elections</h2>

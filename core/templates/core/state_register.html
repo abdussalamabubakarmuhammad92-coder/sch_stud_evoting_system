@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Register State Association — {{ organization.name }}{% endblock %}
+{% block title %}Register State Association — {{ school_name }}{% endblock %}
 {% block content %}
 <h1>Register for State Association</h1>
 <p style="color: #666; margin-bottom: 25px;">Select your state of origin to join the corresponding state association.</p>
@@ -23,7 +23,7 @@
         </p>
         
         <button type="submit" class="btn btn-success">Register</button>
-        <a href="{% url 'voter_dashboard' organization.slug %}" class="btn" style="background: #666;">Cancel</a>
+        <a href="{% url 'voter_dashboard' %}" class="btn" style="background: #666;">Cancel</a>
     </form>
 </div>
 

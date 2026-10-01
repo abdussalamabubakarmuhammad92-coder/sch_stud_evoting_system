@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Observer Dashboard — {{ organization.name }}{% endblock %}
+{% block title %}Observer Dashboard — {{ school_name }}{% endblock %}
 {% block content %}
 <h1>🔍 Election Observer Dashboard</h1>
-<p style="color: #666; margin-bottom: 25px;">{{ organization.name }} — Read-only process monitoring</p>
+<p style="color: #666; margin-bottom: 25px;">{{ school_name }} — Read-only process monitoring</p>
 
 {% if no_assignment %}
 <div class="card text-center">
     <h3>No Election Assigned</h3>
     <p>No election has been assigned to you for monitoring.</p>
-    <p style="color: #666; margin-top: 10px;">Please contact your Organization Admin to be assigned to an election.</p>
+    <p style="color: #666; margin-top: 10px;">Please contact a School Admin to be assigned to an election.</p>
 </div>
 {% elif no_election %}
 <div class="card text-center">
@@ -38,7 +38,7 @@
 <div class="card text-center">
     <h3>Results Published</h3>
     <p>The election has closed and results are now public.</p>
-    <a href="{% url 'election_results' organization.slug election.id %}" class="btn">View Public Results</a>
+    <a href="{% url 'election_results' election.id %}" class="btn">View Public Results</a>
 </div>
 {% else %}
 <div class="alert alert-info" style="margin: 20px 0;">

@@ -471,6 +471,20 @@ class RecognizedDevice(models.Model):
 # 12. AuditLog [Blueprint §9 — used across nearly every section]
 # ============================================================================
 class AuditLog(models.Model):
+    """
+    Append-only, tamper-evident audit register.
+
+    Entries are chained: each row stores the hash of the previous entry in
+    its chain plus the hash of its own contents. Election-scoped events chain
+    per election; school-wide events chain separately. Any edit or deletion
+    breaks the chain and is reported by verify_audit_chain().
+    """
+    SEVERITY_CHOICES = [
+        ("INFO", "Info"),
+        ("SECURITY", "Security"),
+        ("CRITICAL", "Critical"),
+    ]
+
     election = models.ForeignKey(
         Election,
         on_delete=models.SET_NULL,
@@ -482,20 +496,26 @@ class AuditLog(models.Model):
     action_type = models.CharField(max_length=50)
     # e.g. "ELECTION_STATE_CHANGE", "CANDIDATE_APPROVED", "CSV_IMPORT",
     #      "TALLY_HASH_GENERATED", "DOWNTIME_EXTENSION", "PASSWORD_RESET",
-    #      "TIE_DETECTED", "CANDIDATE_WITHDRAWN", "VOTE_CAST"
+    #      "TIE_DETECTED", "CANDIDATE_WITHDRAWN", "VOTE_CAST",
+    #      "DOUBLE_VOTE_ATTEMPT", "ADMIN_PANEL_CHANGED"
 
     description = models.TextField()
     actor = models.CharField(max_length=200, blank=True)
     # e.g. admin username, matric number, or "SYSTEM"
 
+    severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default="INFO")
     metadata = models.JSONField(blank=True, null=True)
-
     timestamp = models.DateTimeField(auto_now_add=True)
+
+    # Tamper-evidence chain
+    prev_hash = models.CharField(max_length=64, blank=True, default="")
+    entry_hash = models.CharField(max_length=64, blank=True, default="")
 
     class Meta:
         ordering = ["-timestamp"]
         verbose_name = "Audit Log"
         verbose_name_plural = "Audit Logs"
+        indexes = [models.Index(fields=["election", "id"])]
 
     def __str__(self):
         return f"[{self.action_type}] {self.actor} @ {self.timestamp}"

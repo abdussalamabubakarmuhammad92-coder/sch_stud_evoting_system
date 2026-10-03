@@ -1,6 +1,7 @@
 """
 Django signals for SUG E-Voting Platform.
 """
+from django.contrib.admin.models import ADDITION, CHANGE, DELETION, LogEntry
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -51,3 +52,31 @@ def log_candidate_status_change(sender, instance, created, **kwargs):
                 "new_status": instance.status,
             },
         )
+
+
+@receiver(post_save, sender=LogEntry)
+def mirror_admin_panel_changes(sender, instance, created, **kwargs):
+    """
+    Mirror changes made through the technical Django admin panel into the
+    audit register. Fires only for admin-panel writes (the app's own views
+    never create LogEntry rows), so nothing is double-logged.
+    """
+    if not created:
+        return
+
+    flag_map = {ADDITION: "ADDED", CHANGE: "CHANGED", DELETION: "DELETED"}
+    flag = flag_map.get(instance.action_flag, "MODIFIED")
+
+    log_action(
+        action_type=f"ADMIN_PANEL_{flag}",
+        description=(
+            f"'{instance.object_repr}' was {flag.lower()} via the technical "
+            f"admin panel"
+        ),
+        actor=instance.user.get_username() if instance.user else "SYSTEM",
+        severity="SECURITY",
+        metadata={
+            "model": instance.content_type.model if instance.content_type else None,
+            "object_id": instance.object_id,
+        },
+    )

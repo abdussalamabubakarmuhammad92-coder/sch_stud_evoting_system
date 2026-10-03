@@ -17,7 +17,7 @@ A Django-based electronic voting platform designed for student-government electi
 - Candidate screening and approval
 - One-vote-per-position participation enforcement
 - Anonymous ballot records: `Vote` deliberately has no foreign key to a voter
-- Audit logging for security-relevant operations
+- Tamper-evident audit register: hash-chained entries with severity levels, denied-attempt capture, and a one-click chain verification
 - Celery + Redis background tasks
 - Result tally hashing for final-tally integrity checking
 - CSV voter import and result/data export workflows

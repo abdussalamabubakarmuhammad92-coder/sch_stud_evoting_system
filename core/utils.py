@@ -3,8 +3,10 @@ Utility functions for SUG E-Voting Platform.
 """
 import string
 import hashlib
+import json
 import secrets
 import logging
+from django.db import transaction
 from django.utils import timezone
 from django.conf import settings
 from django.core.mail import send_mail
@@ -154,9 +156,39 @@ def send_otp(voter, otp_code, purpose):
 # ============================================================================
 # Audit Logging
 # ============================================================================
-def log_action(action_type, description, actor="SYSTEM", election=None, metadata=None, critical=False):
+SEVERITY_INFO = "INFO"
+SEVERITY_SECURITY = "SECURITY"
+SEVERITY_CRITICAL = "CRITICAL"
+
+
+def _canonical_metadata(metadata):
+    """Stable string form of the metadata blob, used in the entry hash."""
+    return json.dumps(metadata or {}, sort_keys=True, default=str)
+
+
+def _compute_entry_hash(prev_hash, scope, severity, action_type, actor, election_id, metadata, description):
+    payload = "|".join([
+        prev_hash,
+        scope,
+        severity,
+        action_type,
+        str(actor),
+        str(election_id or ""),
+        _canonical_metadata(metadata),
+        description,
+    ])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def log_action(action_type, description, actor="SYSTEM", election=None, metadata=None,
+               severity=SEVERITY_INFO, critical=False):
     """
     Create an audit log entry.
+
+    Every entry is bound into a hash chain (per election for election-scoped
+    events, school-wide for the rest), so any later edit or deletion of a row
+    is detectable via verify_audit_chain(). Election-scoped writers are
+    serialized on the election row, keeping the chain fork-free.
 
     critical=True is required for security-relevant state changes recorded
     inside a transaction (vote casting, election state changes): the audit
@@ -164,18 +196,93 @@ def log_action(action_type, description, actor="SYSTEM", election=None, metadata
     action back instead of leaving an unaudited change behind.
     """
     try:
-        AuditLog.objects.create(
-            election=election,
-            action_type=action_type,
-            description=description,
-            actor=str(actor),
-            metadata=metadata or {},
-        )
-        logger.info(f"AUDIT: [{action_type}] {actor} — {description}")
+        with transaction.atomic():
+            if election is not None:
+                # Serialize writers of this election's chain. Callers that
+                # already hold this lock (cast_vote, transition_election_state)
+                # simply re-acquire their own row lock in the same transaction.
+                from .models import Election
+
+                Election.objects.select_for_update().get(pk=election.pk)
+                prev_hash = (
+                    AuditLog.objects.filter(election_id=election.pk)
+                    .order_by("-id")
+                    .values_list("entry_hash", flat=True)
+                    .first()
+                    or ""
+                )
+                scope = f"election:{election.pk}"
+                election_id = election.pk
+            else:
+                prev_hash = (
+                    AuditLog.objects.filter(election__isnull=True)
+                    .order_by("-id")
+                    .values_list("entry_hash", flat=True)
+                    .first()
+                    or ""
+                )
+                scope = "school"
+                election_id = None
+
+            entry_hash = _compute_entry_hash(
+                prev_hash, scope, severity, action_type, actor, election_id, metadata, description
+            )
+            AuditLog.objects.create(
+                election=election,
+                action_type=action_type,
+                description=description,
+                actor=str(actor),
+                severity=severity,
+                metadata=metadata or {},
+                prev_hash=prev_hash,
+                entry_hash=entry_hash,
+            )
+        logger.info(f"AUDIT: [{severity}] [{action_type}] {actor} — {description}")
     except Exception:
         if critical:
             raise
         logger.exception("Audit log write failed for action '%s'; the action itself was not rolled back.", action_type)
+
+
+def verify_audit_chain():
+    """
+    Re-walk every audit chain and recompute each entry hash.
+
+    Returns a report dict: {"valid": bool, "checked": int, "issues": [
+    {"id": ..., "reason": ...}, ...]}. A broken chain means an entry was
+    edited or deleted after being written.
+    """
+    report = {"valid": True, "checked": 0, "issues": []}
+
+    def _walk(entries, scope):
+        prev_hash = ""
+        for entry in entries:
+            expected = _compute_entry_hash(
+                prev_hash, scope, entry.severity, entry.action_type,
+                entry.actor, entry.election_id, entry.metadata, entry.description,
+            )
+            if entry.prev_hash != prev_hash:
+                report["valid"] = False
+                report["issues"].append({"id": entry.id, "reason": "linked to wrong predecessor (row inserted/deleted?)"})
+            elif entry.entry_hash != expected:
+                report["valid"] = False
+                report["issues"].append({"id": entry.id, "reason": "contents do not match recorded hash (row edited?)"})
+            prev_hash = entry.entry_hash
+            report["checked"] += 1
+
+    election_ids = (
+        AuditLog.objects.exclude(election=None)
+        .values_list("election_id", flat=True)
+        .distinct()
+    )
+    for election_id in election_ids:
+        _walk(
+            AuditLog.objects.filter(election_id=election_id).order_by("id"),
+            f"election:{election_id}",
+        )
+    _walk(AuditLog.objects.filter(election__isnull=True).order_by("id"), "school")
+
+    return report
 
 
 # ============================================================================
@@ -297,6 +404,16 @@ def cast_vote(voter, position, candidate):
         locked_voter = type(voter).objects.select_for_update().get(pk=voter.pk)
 
         if locked_voter.has_voted_for_position(position):
+            # Denial is part of the trail. The attempted candidate choice is
+            # deliberately NOT recorded — participation, never preference.
+            log_action(
+                action_type="DOUBLE_VOTE_ATTEMPT",
+                description=f"Rejected repeat vote attempt for position '{position.name}'.",
+                actor=voter.matric_number,
+                election=election,
+                metadata={"position": position.name},
+                severity=SEVERITY_CRITICAL,
+            )
             return False, "You have already voted for this position."
 
         Vote.objects.create(position=position, candidate=candidate)

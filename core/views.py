@@ -138,8 +138,20 @@ def voter_login(request):
                     messages.success(request, f"Welcome back, {voter.matric_number}!")
                     return redirect("voter_dashboard")
                 else:
+                    log_action(
+                        action_type="VOTER_LOGIN_FAILED",
+                        description="Login failed: incorrect password.",
+                        actor=matric,
+                        severity=SEVERITY_SECURITY,
+                    )
                     messages.error(request, "Invalid password.")
             except StudentVoter.DoesNotExist:
+                log_action(
+                    action_type="VOTER_LOGIN_FAILED",
+                    description="Login failed: matric number not found.",
+                    actor=matric,
+                    severity=SEVERITY_SECURITY,
+                )
                 messages.error(request, "Matric number not found.")
     else:
         form = VoterLoginForm()
@@ -159,6 +171,13 @@ def admin_login(request):
                 return redirect("observer_dashboard")
             else:
                 return redirect("admin_dashboard")
+        else:
+            log_action(
+                action_type="STAFF_LOGIN_FAILED",
+                description="Failed staff login attempt.",
+                actor=request.POST.get("username", "unknown"),
+                severity=SEVERITY_SECURITY,
+            )
     else:
         form = AdminLoginForm()
 
@@ -204,6 +223,12 @@ def new_device_otp(request):
 
 
                 if otp.is_locked():
+                    log_action(
+                        action_type="OTP_LOCKED",
+                        description="New-device verification locked after repeated failures.",
+                        actor=voter.matric_number,
+                        severity=SEVERITY_SECURITY,
+                    )
                     messages.error(request, "Too many incorrect attempts")
                     del request.session["pending_login_voter_id"]
                     return redirect("voter_login")
@@ -228,6 +253,12 @@ def new_device_otp(request):
                     return redirect(redirect_url)
                 else:
                     otp.register_failed_attempt()
+                    log_action(
+                        action_type="OTP_VERIFY_FAILED",
+                        description="Incorrect code entered for new-device verification.",
+                        actor=voter.matric_number,
+                        severity=SEVERITY_SECURITY,
+                    )
                     messages.error(request, "Invalid OTP code.")
             except OTPVerification.DoesNotExist:
                 messages.error(request, "No pending OTP found. Please log in again.")
@@ -314,6 +345,12 @@ def voter_register_step2(request):
                     return redirect("voter_register_step2")
 
                 if otp.is_locked():
+                    log_action(
+                        action_type="OTP_LOCKED",
+                        description="Registration verification locked after repeated failures.",
+                        actor=voter.matric_number,
+                        severity=SEVERITY_SECURITY,
+                    )
                     messages.error(request, "Too many incorrect attempts. Please request a new code.")
                     return redirect("voter_register_step2")
 
@@ -330,6 +367,12 @@ def voter_register_step2(request):
                     return redirect("voter_register_step3")
                 else:
                     otp.register_failed_attempt()
+                    log_action(
+                        action_type="OTP_VERIFY_FAILED",
+                        description="Incorrect code entered for registration.",
+                        actor=voter.matric_number,
+                        severity=SEVERITY_SECURITY,
+                    )
                     messages.error(request, "Invalid OTP code. Please try again.")
             except OTPVerification.DoesNotExist:
                 messages.error(request, "No pending OTP found. Please start registration again.")
@@ -466,6 +509,12 @@ def password_reset_verify(request):
                     return redirect("password_reset_request")
 
                 if otp.is_locked():
+                    log_action(
+                        action_type="OTP_LOCKED",
+                        description="Password-reset verification locked after repeated failures.",
+                        actor=voter.matric_number,
+                        severity=SEVERITY_SECURITY,
+                    )
                     messages.error(request, "Too many incorrect attempts. Please request a new code")
                     return redirect("password_reset_request")
 
@@ -477,6 +526,12 @@ def password_reset_verify(request):
                     return redirect("password_reset_new")
                 else:
                     otp.register_failed_attempt()
+                    log_action(
+                        action_type="OTP_VERIFY_FAILED",
+                        description="Incorrect code entered for password reset.",
+                        actor=voter.matric_number,
+                        severity=SEVERITY_SECURITY,
+                    )
                     messages.error(request, "Invalid code.")
             except OTPVerification.DoesNotExist:
                 messages.error(request, "No pending reset found.")
@@ -674,6 +729,13 @@ def ballot_view(request, election_id):
 
     # Check eligibility
     if not is_voter_eligible(voter, election):
+        log_action(
+            action_type="BALLOT_ACCESS_DENIED",
+            description="Ineligible voter attempted to open a ballot.",
+            actor=voter.matric_number,
+            election=election,
+            severity=SEVERITY_SECURITY,
+        )
         messages.error(request, "You are not eligible to vote in this election.")
         return redirect("voter_dashboard")
 
@@ -715,6 +777,13 @@ def cast_vote_view(request, election_id, position_id):
         return JsonResponse({"success": False, "message": "Election is not live."})
 
     if not is_voter_eligible(voter, election):
+        log_action(
+            action_type="BALLOT_ACCESS_DENIED",
+            description="Ineligible voter attempted to cast a ballot.",
+            actor=voter.matric_number,
+            election=election,
+            severity=SEVERITY_SECURITY,
+        )
         return JsonResponse({"success": False, "message": "Not eligible to vote."})
 
     candidate_id = request.POST.get("candidate_id")
@@ -1337,15 +1406,21 @@ def admin_audit_log_export(request):
     response['Content-Disposition'] = f'attachment; filename="audit_log_{timezone.now().date()}.csv"'
 
     writer = csv.writer(response)
-    writer.writerow(['Timestamp', 'Action', 'Election', 'Actor', 'Description'])
+    writer.writerow([
+        'Timestamp', 'Severity', 'Action', 'Election', 'Actor',
+        'Description', 'Previous Hash', 'Entry Hash',
+    ])
 
     for log in logs:
         writer.writerow([
             log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            log.severity,
             log.action_type,
             log.election.title if log.election else "",
             log.actor,
             log.description,
+            log.prev_hash,
+            log.entry_hash,
         ])
 
     # Log the export action
@@ -1356,6 +1431,14 @@ def admin_audit_log_export(request):
     )
 
     return response
+
+
+@login_required
+@org_admin_required
+def audit_log_verify(request):
+    """Re-walk every audit chain and report any tampering."""
+    report = verify_audit_chain()
+    return render(request, "core/admin_audit_verify.html", {"report": report})
 
 
 # ============================================================================

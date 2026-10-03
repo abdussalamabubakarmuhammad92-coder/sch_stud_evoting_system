@@ -45,6 +45,7 @@ urlpatterns = [
     path("admin/election/<int:election_id>/results/", views.admin_results, name="admin_results"),
     path("admin/election/<int:election_id>/results/export/", views.admin_election_results_export, name="admin_election_results_export"),
     path("admin/audit-log/", views.admin_audit_log, name="admin_audit_log"),
+    path("admin/audit-log/verify/", views.audit_log_verify, name="audit_log_verify"),
     path("admin/audit-log/export/", views.admin_audit_log_export, name="admin_audit_log_export"),
 
     # Election Officer (Observer)

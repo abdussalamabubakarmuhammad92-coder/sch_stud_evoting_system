@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from core.models import (
+    AuditLog,
     Candidate,
     Election,
     ElectionCategory,
@@ -16,7 +17,7 @@ from core.models import (
     User,
     Vote,
 )
-from core.utils import cast_vote
+from core.utils import cast_vote, verify_audit_chain
 
 
 class VotingSecurityTests(TestCase):
@@ -137,6 +138,93 @@ class OTPAndElectionStateTests(TestCase):
         election.state = "LIVE"
         self.assertTrue(election.can_transition_to("CLOSED"))
         self.assertFalse(election.can_transition_to("DRAFT"))
+
+
+class AuditChainTests(TestCase):
+    def _make_election_with_voter(self, state="LIVE"):
+        category = ElectionCategory.objects.create(
+            category_type="SUG", name="SUG", slug="audit-sug"
+        )
+        election = Election.objects.create(
+            category=category, title="Audit Election", state=state
+        )
+        position = Position.objects.create(election=election, name="President")
+        candidate = Candidate.objects.create(
+            position=position, name="Candidate One", status="APPROVED"
+        )
+        user = User.objects.create_user(
+            username="audit@example.com",
+            email="audit@example.com",
+            password="StrongPassword123!",
+        )
+        voter = StudentVoter.objects.create(
+            user=user,
+            matric_number="AUD/001",
+            email="audit@example.com",
+            phone_number="08000000000",
+            is_activated=True,
+        )
+        return election, position, candidate, voter
+
+    def test_chain_is_valid_after_normal_activity(self):
+        election, position, candidate, voter = self._make_election_with_voter()
+        cast_vote(voter, position, candidate)
+
+        report = verify_audit_chain()
+        self.assertTrue(report["valid"], report["issues"])
+        self.assertGreater(report["checked"], 0)
+        self.assertTrue(
+            AuditLog.objects.filter(action_type="VOTE_CAST", election=election).exists()
+        )
+
+    def test_tampering_is_detected(self):
+        election, position, candidate, voter = self._make_election_with_voter()
+        cast_vote(voter, position, candidate)
+        self.assertTrue(verify_audit_chain()["valid"])
+
+        # Simulate a direct database edit bypassing the application
+        AuditLog.objects.filter(action_type="VOTE_CAST").update(
+            description="Tampered description"
+        )
+        report = verify_audit_chain()
+        self.assertFalse(report["valid"])
+        self.assertTrue(any("edited" in i["reason"] for i in report["issues"]))
+
+    def test_double_vote_attempt_is_audited_without_ballot_leak(self):
+        election, position, candidate, voter = self._make_election_with_voter()
+        other = Candidate.objects.create(
+            position=position, name="Candidate Two", status="APPROVED"
+        )
+
+        cast_vote(voter, position, candidate)
+        ok, _msg = cast_vote(voter, position, other)
+        self.assertFalse(ok)
+
+        entry = AuditLog.objects.filter(action_type="DOUBLE_VOTE_ATTEMPT").first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.actor, voter.matric_number)
+        # The attempted candidate choice must never appear in the register
+        import json as _json
+        self.assertNotIn(other.name, entry.description)
+        self.assertNotIn(other.name, _json.dumps(entry.metadata))
+
+    def test_admin_panel_changes_are_mirrored(self):
+        from django.contrib.admin.models import ADDITION, LogEntry
+        from django.contrib.contenttypes.models import ContentType
+
+        user = User.objects.create_user(
+            username="tech@example.com", email="tech@example.com", password="StrongPassword123!"
+        )
+        ct = ContentType.objects.get_for_model(Candidate)
+        LogEntry.objects.create(
+            user=user, content_type=ct, object_id="1",
+            object_repr="Candidate One", action_flag=ADDITION,
+        )
+
+        entry = AuditLog.objects.filter(action_type="ADMIN_PANEL_ADDED").first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.actor, "tech@example.com")
+        self.assertEqual(entry.severity, "SECURITY")
 
 
 class ConcurrentVotingTests(TransactionTestCase):

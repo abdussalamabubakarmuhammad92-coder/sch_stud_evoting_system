@@ -1,18 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Audit Log — {{ school_name }}{% endblock %}
+{% block title %}Audit Register — {{ school_name }}{% endblock %}
 {% block content %}
-<h1>📋 Audit Log</h1>
-<p style="color: #666; margin-bottom: 25px;">{{ school_name }} — Complete process audit trail</p>
+<h1>📋 Audit Register</h1>
+<p style="color: #666; margin-bottom: 25px;">
+    {{ school_name }} — tamper-evident record of every significant action. Each entry is
+    hash-chained to the one before it; use <strong>Verify chain integrity</strong> to prove the
+    register has not been altered.
+</p>
 
 <!-- Filters -->
 <div class="card" style="margin-bottom: 25px;">
-    <h3 style="margin-bottom: 15px;">Filter Log</h3>
+    <h3 style="margin-bottom: 15px;">Filter Register</h3>
     <form method="get" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
         <div class="form-group">
             <label>Search by Actor</label>
             <input type="text" name="actor" value="{{ filters.actor }}" placeholder="Email or matric number">
         </div>
-        
+
         <div class="form-group">
             <label>Actor Type</label>
             <select name="actor_type">
@@ -21,7 +25,7 @@
                 <option value="ADMIN" {% if filters.actor_type == "ADMIN" %}selected{% endif %}>Admins Only</option>
             </select>
         </div>
-        
+
         <div class="form-group">
             <label>Election</label>
             <select name="election">
@@ -31,17 +35,17 @@
                 {% endfor %}
             </select>
         </div>
-        
+
         <div class="form-group">
             <label>From Date</label>
             <input type="date" name="date_from" value="{{ filters.date_from }}">
         </div>
-        
+
         <div class="form-group">
             <label>To Date</label>
             <input type="date" name="date_to" value="{{ filters.date_to }}">
         </div>
-        
+
         <div class="form-group" style="display: flex; align-items: flex-end; gap: 10px;">
             <button type="submit" class="btn">🔍 Filter</button>
             <a href="{% url 'admin_audit_log' %}" class="btn" style="background: #666;">Clear</a>
@@ -49,45 +53,50 @@
     </form>
 </div>
 
-<!-- Export Button -->
-<div style="margin-bottom: 20px;">
-    <a href="{% url 'admin_audit_log_export' %}?{{ query_string }}&export=1" class="btn" style="background: #38a169;">📥 Export Filtered Log as CSV</a>
+<!-- Actions -->
+<div style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+    <a href="{% url 'audit_log_verify' %}" class="btn" style="background: #2b6cb0;">🔒 Verify chain integrity</a>
+    <a href="{% url 'admin_audit_log_export' %}?{{ query_string }}&export=1" class="btn" style="background: #38a169;">📥 Export Filtered Register as CSV (includes hashes)</a>
 </div>
 
-<!-- Log Table -->
+<!-- Register Table -->
 <div class="card">
     <table>
         <thead>
             <tr>
                 <th>Time</th>
+                <th>Severity</th>
                 <th>Action</th>
                 <th>Election</th>
                 <th>Actor</th>
                 <th>Description</th>
+                <th>Chain</th>
             </tr>
         </thead>
         <tbody>
             {% for log in logs %}
             <tr>
                 <td style="white-space: nowrap;">{{ log.timestamp|date:"M d, Y H:i:s" }}</td>
+                <td><span class="status-badge status-{{ log.severity }}">{{ log.severity }}</span></td>
                 <td><code>{{ log.action_type }}</code></td>
                 <td>{% if log.election %}{{ log.election.title }}{% else %}—{% endif %}</td>
                 <td>{{ log.actor|default:"—" }}</td>
                 <td>{{ log.description|truncatewords:20 }}</td>
+                <td><code title="Entry hash: {{ log.entry_hash }}">{{ log.entry_hash|slice:":10" }}…</code></td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="5" style="text-align: center; color: #666; padding: 30px;">
-                    No audit log entries match your filters.
+                <td colspan="7" style="text-align: center; color: #666; padding: 30px;">
+                    No audit entries match your filters.
                 </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
-    
+
     {% if logs.count == 500 %}
     <p style="color: #666; margin-top: 15px; font-size: 0.9em;">
-        Showing latest 500 entries. Use filters or export CSV for complete history.
+        Showing latest 500 entries. Use filters or export CSV for complete history, including full hash values.
     </p>
     {% endif %}
 </div>
